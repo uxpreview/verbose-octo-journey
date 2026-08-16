@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>154 Low St — Irrigation Planner</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-title">154 Low St</span>
+    <span class="brand-sub">Irrigation planner</span>
+  </div>
+  <div class="toolbar" role="toolbar" aria-label="Map tools">
+    <button class="tool" data-mode="select" aria-pressed="true" title="Select / drag (V)">Select</button>
+    <button class="tool" data-mode="head" title="Add sprinkler head (H)">+ Head</button>
+    <button class="tool" data-mode="pipe" title="Draw pipe / trench (P)">Pipe</button>
+    <button class="tool" data-mode="area" title="Draw an area: lawn, bed, hardscape (A)">Area</button>
+    <button class="tool" data-mode="measure" title="Measure distance (M)">Measure</button>
+    <span class="sep"></span>
+    <button id="btn-undo" class="ghost" title="Undo (⌘Z)">Undo</button>
+    <button id="btn-fit" class="ghost" title="Zoom to lot">Fit lot</button>
+    <label class="check"><input type="checkbox" id="chk-coverage" checked /> Coverage</label>
+    <label class="check"><input type="checkbox" id="chk-labels" checked /> Labels</label>
+    <select id="sel-basemap" title="Aerial photo year">
+      <option value="ma2025">MassGIS aerial 2025</option>
+      <option value="ma2023">MassGIS aerial 2023</option>
+      <option value="ma2021">MassGIS aerial 2021</option>
+      <option value="esri">Esri World Imagery</option>
+      <option value="none">No photo</option>
+    </select>
+  </div>
+  <div class="hint" id="hint">Click a head to edit it. Drag to move.</div>
+</header>
+
+<main class="layout">
+  <div id="map" aria-label="Map of the property"></div>
+
+  <section class="panel">
+    <div class="card" id="card-supply">
+      <h2>Water supply</h2>
+      <div class="row">
+        <label for="psi">Pressure <output id="psi-out">50</output> PSI</label>
+        <input type="range" id="psi" min="25" max="80" step="1" value="50" />
+      </div>
+      <div class="row">
+        <label for="gpm">Flow available <output id="gpm-out">10</output> GPM</label>
+        <input type="range" id="gpm" min="3" max="25" step="0.5" value="10" />
+      </div>
+      <details class="sub">
+        <summary>Bucket test helper</summary>
+        <p class="small">Time how long a 5-gallon bucket takes to fill at the spigot.</p>
+        <div class="inline">
+          <input type="number" id="bucket-sec" min="5" max="300" step="1" placeholder="seconds" />
+          <button id="btn-bucket" class="ghost">Set GPM</button>
+        </div>
+      </details>
+      <div class="row">
+        <label for="def-type">New heads default</label>
+        <div class="inline">
+          <select id="def-type">
+            <option value="spray">Spray (8–15 ft)</option>
+            <option value="rotor">Rotor (18–35 ft)</option>
+            <option value="mp">MP rotator (13–30 ft)</option>
+          </select>
+          <select id="def-arc">
+            <option value="360">Full 360°</option>
+            <option value="180" selected>Half 180°</option>
+            <option value="90">Quarter 90°</option>
+            <option value="270">270°</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <label for="def-radius">Default radius <output id="def-radius-out">12</output> ft</label>
+        <input type="range" id="def-radius" min="4" max="35" step="0.5" value="12" />
+      </div>
+      <p class="small muted">Radius shrinks/grows with pressure. GPM per head is estimated from typical Rain Bird / Hunter nozzle charts.</p>
+    </div>
+
+    <div class="card" id="card-head">
+      <h2>Selected head <span id="head-title" class="muted"></span></h2>
+      <div id="head-empty" class="empty">No head selected. Use <b>+ Head</b> then click the map, or click an existing head.</div>
+      <div id="head-controls" hidden>
+        <div class="row">
+          <label for="h-type">Type</label>
+          <select id="h-type">
+            <option value="spray">Spray</option>
+            <option value="rotor">Rotor</option>
+            <option value="mp">MP rotator</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="h-radius">Radius <output id="h-radius-out">12</output> ft</label>
+          <input type="range" id="h-radius" min="4" max="35" step="0.5" value="12" />
+        </div>
+        <div class="row">
+          <label for="h-arc">Arc <output id="h-arc-out">180</output>°</label>
+          <input type="range" id="h-arc" min="30" max="360" step="5" value="180" />
+        </div>
+        <div class="row">
+          <label for="h-aim">Aim <output id="h-aim-out">0</output>° (compass)</label>
+          <input type="range" id="h-aim" min="0" max="359" step="1" value="0" />
+        </div>
+        <div class="row">
+          <label for="h-zone">Zone</label>
+          <div class="inline">
+            <select id="h-zone"></select>
+            <span id="h-gpm" class="stat"></span>
+          </div>
+        </div>
+        <div class="inline">
+          <button id="btn-dup" class="ghost">Duplicate</button>
+          <button id="btn-del" class="danger">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="card-zones">
+      <h2>Zones &amp; pipe</h2>
+      <div id="zones-table"></div>
+      <div class="stats">
+        <div><span class="k">Heads</span><span class="v" id="stat-heads">0</span></div>
+        <div><span class="k">Pipe</span><span class="v" id="stat-pipe">0 ft</span></div>
+        <div><span class="k">Lawn covered</span><span class="v" id="stat-cov">–</span></div>
+        <div><span class="k">Double covered</span><span class="v" id="stat-cov2">–</span></div>
+      </div>
+      <div class="inline">
+        <select id="pipe-zone" title="Zone for new pipe"></select>
+        <button id="btn-clear-pipes" class="ghost">Clear pipes</button>
+      </div>
+      <p class="small muted">Blue pin = water source. Drag it to the real spigot / manifold spot.</p>
+    </div>
+
+    <div class="card" id="card-areas">
+      <h2>Areas</h2>
+      <div class="inline">
+        <select id="area-type">
+          <option value="lawn">Lawn</option>
+          <option value="bed">Garden bed</option>
+          <option value="hardscape">Hardscape (patio, drive, walk)</option>
+          <option value="structure">Structure (shed, deck)</option>
+          <option value="tree">Tree canopy</option>
+        </select>
+      </div>
+      <div id="areas-list" class="list"></div>
+      <p class="small muted">Coverage counts lawn + beds. Hardscape and structures are skipped.</p>
+    </div>
+
+    <div class="card" id="card-file">
+      <h2>Plan file</h2>
+      <div class="inline">
+        <button id="btn-export" class="ghost">Export JSON</button>
+        <label class="ghost btn-like">Import <input type="file" id="file-import" accept="application/json" hidden /></label>
+        <button id="btn-reset" class="danger">Reset</button>
+      </div>
+      <p class="small muted">Saved in this browser automatically.</p>
+      <details class="sub">
+        <summary>Reference photos</summary>
+        <div class="photos" id="photos"></div>
+      </details>
+    </div>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="app.js"></script>
+</body>
+</html>
