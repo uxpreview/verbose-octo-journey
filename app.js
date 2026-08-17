@@ -22,7 +22,7 @@
     aerial: { src: 'img/aerial-2025.jpg', u0: -30, u1: 90, v0: -25, v1: 125 }, // MassGIS spring 2025, pre-rotated
     sketch: { src: 'img/layout-sketch.jpg', u0: -31.4, u1: 77.05, v0: -25, v1: 110.6 }, // Ryan's layout sketch (11.8 px/ft)
   };
-  const SEED_VERSION = 5;
+  const SEED_VERSION = 6;
 
   const ZONE_COLORS = ['#6fd39b', '#4fb2ff', '#ffb648', '#ff6b9d', '#c48bff', '#4fe0d8'];
   const AREA_STYLE = {
@@ -153,7 +153,7 @@
     state.areas = state.areas.filter((a) => a.keep);
     state.areas.push(
       // lawns
-      A('lawn', 'Left front', [{ x: -17, y: -14 }, { x: -0.5, y: -14 }, { x: -0.5, y: 7.2 }, { x: 13.5, y: 7.2 }, { x: 13.5, y: 46.2 }, { x: 13.1, y: 46.2 }, { x: 13.1, y: 50.8 }, { x: -17, y: 50.8 }]),
+      A('lawn', 'Left front', [{ x: -6, y: 25 }, { x: -4.3, y: 16 }, { x: -4.3, y: 8 }, { x: -0.5, y: 8 }, { x: -0.5, y: 7.2 }, { x: 13.5, y: 7.2 }, { x: 13.5, y: 46.2 }, { x: 13.1, y: 46.2 }, { x: 13.1, y: 50.8 }, { x: -6, y: 50.8 }]),
       A('lawn', 'Front lawn', [{ x: 27, y: -17 }, { x: 73.7, y: -17 }, { x: 72, y: 55.5 }, { x: 69.9, y: 55.5 }, { x: 69.9, y: 44.5 }, { x: 27, y: 44.5 }]),
       A('lawn', 'Back yard', [{ x: -6, y: 50.8 }, { x: 13.1, y: 50.8 }, { x: 13.1, y: 55.5 }, { x: 69.9, y: 55.5 }, { x: 67.3, y: 106.8 }, { x: -6, y: 106.4 }]),
       // hardscape
@@ -181,7 +181,7 @@
       R('bed', 'Raised bed 2', 60.7, 62.3, 65.8, 64.8),
       R('bed', 'Raised bed 3', 58.8, 56.4, 67.7, 58.9),
       // woods left of the fence, plus the strip in front of it down to the driveway apron
-      A('woods', 'Woods', [{ x: -6, y: 106.4 }, { x: -17, y: 107 }, { x: -17, y: 50.8 }, { x: -12, y: 50.8 }, { x: -12, y: 8 }, { x: -4.3, y: 8 }, { x: -4.3, y: 16 }, { x: -6, y: 25 }, { x: -6, y: 50.8 }]),
+      A('woods', 'Woods', [{ x: -6, y: 106.4 }, { x: -17, y: 107 }, { x: -17, y: -14 }, { x: -0.5, y: -14 }, { x: -0.5, y: 8 }, { x: -4.3, y: 8 }, { x: -4.3, y: 16 }, { x: -6, y: 25 }, { x: -6, y: 50.8 }]),
       // structures
       A('structure', 'House', [{ x: 13.1, y: 46.2 }, { x: 27.9, y: 46.2 }, { x: 27.9, y: 54.7 }, { x: 57.1, y: 54.7 }, { x: 57.1, y: 79.7 }, { x: 27.9, y: 79.7 }, { x: 27.9, y: 68.2 }, { x: 13.1, y: 68.2 }], { house: true }),
       R('structure', 'Shed', -3.9, 93.6, 5.4, 103.4),
