@@ -22,7 +22,7 @@
     aerial: { src: 'img/aerial-2025.jpg', u0: -30, u1: 90, v0: -25, v1: 125 }, // MassGIS spring 2025, pre-rotated
     sketch: { src: 'img/layout-sketch.jpg', u0: -31.4, u1: 77.05, v0: -25, v1: 110.6 }, // Ryan's layout sketch (11.8 px/ft)
   };
-  const SEED_VERSION = 3;
+  const SEED_VERSION = 4;
 
   const ZONE_COLORS = ['#6fd39b', '#4fb2ff', '#ffb648', '#ff6b9d', '#c48bff', '#4fe0d8'];
   const AREA_STYLE = {
@@ -140,13 +140,13 @@
     state.areas = state.areas.filter((a) => a.keep);
     state.areas.push(
       // lawns
-      A('lawn', 'Left front', [{ x: -17, y: -14 }, { x: -0.5, y: -14 }, { x: -0.5, y: 7.2 }, { x: 13.5, y: 7.2 }, { x: 13.5, y: 46.2 }, { x: -6, y: 46.2 }, { x: -6, y: 50.8 }, { x: -17, y: 50.8 }]),
-      A('lawn', 'Front lawn', [{ x: 29.2, y: -14 }, { x: 73.7, y: -14 }, { x: 72, y: 55.5 }, { x: 69.9, y: 55.5 }, { x: 69.9, y: 44.5 }, { x: 29.2, y: 44.5 }]),
+      A('lawn', 'Left front', [{ x: -17, y: -14 }, { x: -0.5, y: -14 }, { x: -0.5, y: 7.2 }, { x: 13.5, y: 7.2 }, { x: 13.5, y: 46.2 }, { x: 13.1, y: 46.2 }, { x: 13.1, y: 50.8 }, { x: -17, y: 50.8 }]),
+      A('lawn', 'Front lawn', [{ x: 27, y: -17 }, { x: 73.7, y: -17 }, { x: 72, y: 55.5 }, { x: 69.9, y: 55.5 }, { x: 69.9, y: 44.5 }, { x: 27, y: 44.5 }]),
       A('lawn', 'Back yard', [{ x: -6, y: 50.8 }, { x: 13.1, y: 50.8 }, { x: 13.1, y: 55.5 }, { x: 69.9, y: 55.5 }, { x: 67.3, y: 106.8 }, { x: -6, y: 106.4 }]),
       // hardscape
       A('hardscape', 'Driveway', [{ x: -0.5, y: -17 }, { x: 27, y: -17 }, { x: 27, y: 46.2 }, { x: 13.5, y: 46.2 }, { x: 13.5, y: 7.2 }, { x: -0.5, y: 7.2 }]),
-      R('hardscape', 'Front walk', 27, -17, 29.2, 46.2),
-      R('hardscape', 'Walk landing', 27, 27, 31.3, 33),
+      R('hardscape', 'Driveway steps', 27, 27, 31.3, 33),
+      A('hardscape', 'Walk to front door', [{ x: 31.3, y: 28.5 }, { x: 31.3, y: 32.5 }, { x: 40.5, y: 44.9 }, { x: 44, y: 44.9 }]),
       R('hardscape', 'Side steps', 9.7, 37.7, 13.5, 42.8),
       R('hardscape', 'Front steps', 38.9, 44.9, 45.3, 54.7),
       R('hardscape', 'Patio', 11.8, 68.2, 27.5, 81.8),
@@ -171,8 +171,6 @@
       A('structure', 'House', [{ x: 13.1, y: 46.2 }, { x: 27.9, y: 46.2 }, { x: 27.9, y: 54.7 }, { x: 57.1, y: 54.7 }, { x: 57.1, y: 79.7 }, { x: 27.9, y: 79.7 }, { x: 27.9, y: 68.2 }, { x: 13.1, y: 68.2 }], { house: true }),
       R('structure', 'Shed', -3.9, 93.6, 5.4, 103.4),
       R('structure', 'Outdoor shower', 27.5, 79.7, 35.1, 86.9),
-      // tree (from the aerial; not on the sketch)
-      A('tree', 'Big tree', circlePoints({ x: -4, y: 82 }, 17, 40)),
       // fences
       A('fence', 'Yard fence', [{ x: 13.1, y: 50.8 }, { x: -6, y: 50.8 }, { x: -6, y: 106.4 }, { x: 67.3, y: 106.8 }, { x: 73.7, y: 1.3 }], { open: true }),
       A('fence', 'Side gate fence', [{ x: 57.1, y: 55.5 }, { x: 69.9, y: 55.5 }], { open: true }),
