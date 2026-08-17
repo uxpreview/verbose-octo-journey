@@ -35,7 +35,7 @@ python3 -m http.server 8765   # then open http://localhost:8765
 
 ## Assumptions to check on site
 
-- Water source drop starts on the back wall of the house beside the outdoor shower. Drag it if the real tap / manifold is elsewhere.
+- Two water sources (hose bibs) as confirmed by Ryan: back wall right of the outdoor shower, and front wall near the right corner. Drag to fine-tune; `+ Water source` adds more; pipes snap to any of them.
 - Front walk is the short path from the driveway steps to the front-door steps (per the photos); there is no walk to the street.
 - Default supply is 50 PSI / 10 GPM until a real gauge + bucket test replaces it.
 - Head GPM and radius are estimates from typical Rain Bird / Hunter nozzle charts, not a hydraulic design.

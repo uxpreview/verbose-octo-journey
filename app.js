@@ -98,15 +98,20 @@
     version: 2,
     supply: { psi: 50, gpm: 10 },
     defaults: { type: 'spray', arc: 180, radius: 12 },
-    source: { x: 37, y: 79 },
+    sources: defaultSources(),
     heads: [], pipes: [], areas: [],
     seedVersion: SEED_VERSION,
     nextId: 1,
   });
+  const defaultSources = () => [
+    { id: 's1', name: 'Back hose bib', x: 37, y: 79 }, // rear wall, right of the outdoor shower
+    { id: 's2', name: 'Front hose bib', x: 53.2, y: 54.2 }, // front wall, near the right corner
+  ];
   let state = loadState();
   let history = [];
   let selectedHeadId = null;
   let selectedShape = null; // {kind:'area'|'pipe', id}
+  let selectedSourceId = null;
   let mode = 'select';
   let draft = null;
   let cursor = null; // plan point under the pointer while drafting
@@ -116,6 +121,9 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const st = Object.assign(defaultState(), JSON.parse(raw));
+        if (st.source && !Array.isArray(st.sources)) { st.sources = defaultSources(); delete st.source; }
+        if (!Array.isArray(st.sources) || !st.sources.length) st.sources = defaultSources();
+        for (const p of st.pipes || []) for (const pt of p.pts) if (pt.source === true) { pt.sourceId = 's1'; delete pt.source; }
         if ((st.seedVersion || 0) < SEED_VERSION && !st.heads.length && !st.pipes.length) st.areas = [];
         return st;
       }
@@ -129,9 +137,9 @@
   }
   function migrateV1(s) {
     const n = Object.assign(defaultState(), { supply: s.supply, defaults: s.defaults, nextId: s.nextId });
-    n.source = legacyToPlan(s.source);
+    n.sources = defaultSources();
     n.heads = (s.heads || []).map((h) => ({ ...h, ...legacyToPlan(h), aim: Math.round((h.aim - 58.4 + 720) % 360) }));
-    n.pipes = (s.pipes || []).map((p) => ({ ...p, pts: p.pts.map((pt) => ({ ...pt, ...legacyToPlan(pt) })) }));
+    n.pipes = (s.pipes || []).map((p) => ({ ...p, pts: p.pts.map((pt) => { const q = { ...pt, ...legacyToPlan(pt) }; if (q.source) { q.sourceId = 's1'; delete q.source; } return q; }) }));
     n.areas = []; // old seeded areas were rough; reseed
     return n;
   }
@@ -190,7 +198,6 @@
       A('fence', 'Yard fence', [{ x: 13.1, y: 50.8 }, { x: -6, y: 50.8 }, { x: -6, y: 106.4 }, { x: 67.3, y: 106.8 }, { x: 73.7, y: 1.3 }], { open: true }),
       A('fence', 'Side gate fence', [{ x: 57.1, y: 55.5 }, { x: 69.9, y: 55.5 }], { open: true }),
     );
-    state.source = { x: 37, y: 79 };
     state.seedVersion = SEED_VERSION;
   }
 
@@ -367,17 +374,20 @@
   function syncPipesToHeads() {
     for (const p of state.pipes) for (const pt of p.pts) {
       if (pt.headId != null) { const h = state.heads.find((x) => x.id === pt.headId); if (h) { pt.x = h.x; pt.y = h.y; } }
-      if (pt.source) { pt.x = state.source.x; pt.y = state.source.y; }
+      if (pt.sourceId) { const sr = state.sources.find((x) => x.id === pt.sourceId); if (sr) { pt.x = sr.x; pt.y = sr.y; } }
     }
   }
 
   function renderSource() {
     const g = groups.source; clear(g);
-    const s = state.source, r = px(9);
-    const grp = el('g', { class: 'drag', 'data-drag': 'source', transform: `translate(${s.x},${-s.y})`, filter: 'url(#soft)' }, g);
-    el('path', { d: `M0,0 C${-r},${-r * 1.2} ${-r},${-r * 2.2} 0,${-r * 2.4} C${r},${-r * 2.2} ${r},${-r * 1.2} 0,0 Z`, fill: '#4fb2ff', stroke: '#fff', 'stroke-width': px(1.5) }, grp);
-    el('circle', { cx: 0, cy: -r * 1.45, r: r * 0.35, fill: '#fff' }, grp);
-    el('title', {}, grp).textContent = 'Water source — drag to the spigot / manifold';
+    const r = px(9);
+    for (const sr of state.sources) {
+      const sel = selectedSourceId === sr.id;
+      const grp = el('g', { class: 'drag', 'data-drag': 'source', 'data-id': sr.id, transform: `translate(${sr.x},${-sr.y})`, filter: 'url(#soft)' }, g);
+      el('path', { d: `M0,0 C${-r},${-r * 1.2} ${-r},${-r * 2.2} 0,${-r * 2.4} C${r},${-r * 2.2} ${r},${-r * 1.2} 0,0 Z`, fill: '#4fb2ff', stroke: '#fff', 'stroke-width': px(sel ? 3 : 1.5) }, grp);
+      el('circle', { cx: 0, cy: -r * 1.45, r: r * 0.35, fill: '#fff' }, grp);
+      el('title', {}, grp).textContent = `${sr.name} — drag to move, click then Delete to remove`;
+    }
   }
 
   function renderHeads() {
@@ -441,6 +451,7 @@
       const c = centroid(a.pts);
       el('text', { x: c.x, y: -c.y, 'font-size': px(10.5), fill: '#fff', 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: 'rgba(0,0,0,0.7)', 'stroke-width': px(3), 'pointer-events': 'none' }, g).textContent = a.name;
     }
+    for (const sr of state.sources) el('text', { x: sr.x, y: -sr.y - px(24), 'font-size': px(10), fill: '#9fd3ff', 'text-anchor': 'middle', 'paint-order': 'stroke', stroke: 'rgba(0,0,0,0.75)', 'stroke-width': px(3), 'pointer-events': 'none' }, g).textContent = sr.name;
     for (const p of state.pipes) {
       const mid = p.pts[Math.floor(p.pts.length / 2)];
       el('text', { x: mid.x, y: -mid.y - px(8), 'font-size': px(10), fill: zoneColor(p.zone), 'text-anchor': 'middle', 'paint-order': 'stroke', stroke: 'rgba(0,0,0,0.8)', 'stroke-width': px(3), 'pointer-events': 'none' }, g).textContent = `${pipeLength(p).toFixed(0)} ft`;
@@ -510,6 +521,15 @@
     }
     html += '</table>';
     $('zones-table').innerHTML = keys.length ? html : '<div class="empty">No zones yet. Add heads and pipe.</div>';
+    const sl = $('sources-list'); sl.innerHTML = '';
+    for (const sr of state.sources) {
+      const row = document.createElement('div'); row.className = 'item' + (selectedSourceId === sr.id ? ' sel' : '');
+      row.innerHTML = `<span class="swatch" style="background:#4fb2ff;border-radius:50% 50% 50% 0"></span><span class="name" title="Click to select on the plan">${sr.name}</span>`;
+      row.querySelector('.name').onclick = () => { setMode('select'); selectedSourceId = sr.id; selectedHeadId = null; selectedShape = null; renderAll(); };
+      const ren = document.createElement('button'); ren.className = 'ghost'; ren.textContent = 'Rename';
+      ren.onclick = () => { const n = prompt('Water source name', sr.name); if (n) { pushHistory(); sr.name = n; save(); renderAll(); } };
+      row.append(ren); sl.append(row);
+    }
     $('stat-heads').textContent = state.heads.length;
     $('stat-pipe').textContent = `${state.pipes.reduce((s, p) => s + pipeLength(p), 0).toFixed(0)} ft`;
     $('stat-cov').textContent = coverageStats.pct == null ? '–' : `${coverageStats.pct.toFixed(0)}%`;
@@ -531,9 +551,9 @@
   }
   function fillZoneSelect(sel, value) { sel.innerHTML = ''; for (let z = 1; z <= 6; z++) { const o = document.createElement('option'); o.value = z; o.textContent = `Zone ${z}`; sel.append(o); } sel.value = value; }
 
-  function selectHead(id) { selectedHeadId = id; selectedShape = null; renderAll(); }
+  function selectHead(id) { selectedHeadId = id; selectedShape = null; selectedSourceId = null; renderAll(); }
   function selectShape(kind, id) {
-    selectedShape = { kind, id }; selectedHeadId = null;
+    selectedShape = { kind, id }; selectedHeadId = null; selectedSourceId = null;
     $('hint').textContent = kind === 'area' ? 'Drag the corner dots to reshape. Click a hollow dot to add a corner. Right-click a dot to remove it. Delete key removes the area.' : 'Drag the dots to reroute the pipe. Click a hollow dot to add a bend. Right-click a dot to remove it. Delete key removes the pipe.';
     renderAll();
   }
@@ -549,7 +569,7 @@
     measure: 'Click two or more points to measure. Enter or Esc to finish.',
   };
   function setMode(m) {
-    mode = m; finishDraft(false); selectedShape = null;
+    mode = m; finishDraft(false); selectedShape = null; if (m !== 'select') selectedSourceId = null;
     document.querySelectorAll('.tool').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
     $('map').className = `mode-${m}`;
     $('hint').textContent = HINTS[m];
@@ -584,10 +604,10 @@
       if (mode === 'pipe') {
         const tol = px(10);
         if (snap && snap.head) { pt.x = snap.head.x; pt.y = snap.head.y; pt.headId = snap.head.id; }
-        else if (snap && snap.source) { pt.x = state.source.x; pt.y = state.source.y; pt.source = true; }
+        else if (snap && snap.source) { pt.x = snap.source.x; pt.y = snap.source.y; pt.sourceId = snap.source.id; }
         else {
           for (const h of state.heads) if (dist(h, p) < tol) { pt.x = h.x; pt.y = h.y; pt.headId = h.id; break; }
-          if (!pt.headId && dist(state.source, p) < tol) { pt.x = state.source.x; pt.y = state.source.y; pt.source = true; }
+          if (!pt.headId) for (const sr of state.sources) if (dist(sr, p) < tol) { pt.x = sr.x; pt.y = sr.y; pt.sourceId = sr.id; break; }
         }
       }
       draft.pts.push(pt); renderDraft();
@@ -607,6 +627,13 @@
     }
   }
   function deleteSelected() {
+    if (selectedSourceId) {
+      if (state.sources.length <= 1) { alert('Keep at least one water source.'); return; }
+      pushHistory();
+      state.sources = state.sources.filter((x) => x.id !== selectedSourceId);
+      for (const p of state.pipes) for (const pt of p.pts) if (pt.sourceId === selectedSourceId) delete pt.sourceId;
+      selectedSourceId = null; save(); renderAll(); return;
+    }
     if (selectedShape) {
       pushHistory();
       if (selectedShape.kind === 'area') state.areas = state.areas.filter((a) => a.id !== selectedShape.id);
@@ -628,7 +655,7 @@
     const dragEl = e.target.closest('.drag');
     const p = clientToPlan(e.clientX, e.clientY);
     ptr = { start: { cx: e.clientX, cy: e.clientY }, moved: false, view0: { ...view }, p0: p, target: e.target };
-    if (dragEl && mode === 'select') { ptr.type = dragEl.dataset.drag; ptr.id = Number(dragEl.dataset.id); ptr.index = Number(dragEl.dataset.index); ptr.pushed = false; }
+    if (dragEl && mode === 'select') { ptr.type = dragEl.dataset.drag; ptr.id = Number(dragEl.dataset.id); ptr.sid = dragEl.dataset.id; ptr.index = Number(dragEl.dataset.index); ptr.pushed = false; }
     else ptr.type = 'pan';
     svg.setPointerCapture(e.pointerId);
     e.preventDefault();
@@ -650,7 +677,8 @@
       h.x = p.x; h.y = p.y; syncPipesToHeads(); selectedHeadId = h.id; selectedShape = null;
       renderSectors(); renderPipes(); renderHeads(); renderHandles(); renderLabels();
     } else if (ptr.type === 'source') {
-      state.source = { x: p.x, y: p.y }; syncPipesToHeads(); renderPipes(); renderSource(); renderLabels();
+      const sr = state.sources.find((x) => x.id === ptr.sid); if (!sr) return;
+      sr.x = p.x; sr.y = p.y; syncPipesToHeads(); renderPipes(); renderSource(); renderLabels();
     } else if (ptr.type === 'aim') {
       const h = state.heads.find((x) => x.id === ptr.id); if (!h) return;
       const t = HEAD_TYPES[h.type];
@@ -660,7 +688,7 @@
       renderSectors(); renderHandles(); renderPanel();
     } else if (ptr.type === 'vtx') {
       const obj = selectedShapeObj(); if (!obj) return;
-      const pt = obj.pts[ptr.index]; pt.x = p.x; pt.y = p.y; delete pt.headId; delete pt.source;
+      const pt = obj.pts[ptr.index]; pt.x = p.x; pt.y = p.y; delete pt.headId; delete pt.sourceId;
       if (selectedShape.kind === 'area') renderAreas(); else renderPipes();
       renderHandles(); renderLabels();
     }
@@ -676,15 +704,16 @@
       const mid = t.closest('.mid');
       if (mid) { const obj = selectedShapeObj(); if (obj) { const i = Number(mid.dataset.mid); const a = obj.pts[i], b = obj.pts[(i + 1) % obj.pts.length]; pushHistory(); obj.pts.splice(i + 1, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }); save(); renderAll(); } return; }
       if (dragEl && dragEl.dataset.drag === 'head') { selectHead(Number(dragEl.dataset.id)); return; }
+      if (dragEl && dragEl.dataset.drag === 'source') { selectedSourceId = dragEl.dataset.id; selectedHeadId = null; selectedShape = null; $('hint').textContent = 'Water source selected. Drag to move. Delete key removes it. Rename it in the Zones card.'; renderAll(); return; }
       if (dragEl) return; // vtx / aim / source click without movement: nothing to do
       const shape = t.closest('.shape');
       if (shape) { selectShape(shape.dataset.kind, Number(shape.dataset.id)); return; }
-      selectedHeadId = null; selectedShape = null; $('hint').textContent = HINTS.select; renderAll(); return;
+      selectedHeadId = null; selectedShape = null; selectedSourceId = null; $('hint').textContent = HINTS.select; renderAll(); return;
     }
     const dragEl = t.closest('.drag');
     const snap = {};
     if (dragEl && dragEl.dataset.drag === 'head') snap.head = state.heads.find((x) => x.id === Number(dragEl.dataset.id));
-    if (dragEl && dragEl.dataset.drag === 'source') snap.source = true;
+    if (dragEl && dragEl.dataset.drag === 'source') snap.source = state.sources.find((x) => x.id === dragEl.dataset.id);
     planClick(was.p0, snap);
   });
   svg.addEventListener('dblclick', (e) => { e.preventDefault(); if (draft) { if (draft.pts.length > 1) draft.pts.pop(); finishDraft(true); } });
@@ -707,7 +736,7 @@
     if (e.key === 'Escape') { if (draft) finishDraft(false); else setMode('select'); return; }
     const k = e.key.toLowerCase();
     if (k === 'v') setMode('select'); else if (k === 'h') setMode('head'); else if (k === 'p') setMode('pipe'); else if (k === 'a') setMode('area'); else if (k === 'm') setMode('measure');
-    else if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedHeadId != null || selectedShape) { e.preventDefault(); deleteSelected(); } }
+    else if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedHeadId != null || selectedShape || selectedSourceId) { e.preventDefault(); deleteSelected(); } }
     else if (selectedHeadId != null && (e.key === '[' || e.key === ']')) {
       const h = state.heads.find((x) => x.id === selectedHeadId); if (!h) return;
       h.aim = (h.aim + (e.key === ']' ? 5 : -5) + 360) % 360; save(); renderAll();
@@ -746,6 +775,12 @@
   $('h-zone').onchange = withHead((h, e) => { pushHistory(); h.zone = Number(e.target.value); save(); renderAll(); });
   $('btn-del').onclick = deleteSelected;
   $('btn-dup').onclick = withHead((h) => { pushHistory(); const c = { ...h, id: newId(), x: h.x + 3, y: h.y - 3 }; state.heads.push(c); selectedHeadId = c.id; save(); renderAll(); });
+  $('btn-add-source').onclick = () => {
+    pushHistory();
+    const id = 's' + (state.nextId++);
+    state.sources.push({ id, name: `Source ${state.sources.length + 1}`, x: 40, y: 20 });
+    selectedSourceId = id; setMode('select'); save(); renderAll();
+  };
   $('btn-clear-pipes').onclick = () => { if (!state.pipes.length || !confirmDelete('Remove all pipe runs?')) return; pushHistory(); state.pipes = []; save(); renderAll(); };
   $('pipe-zone').onchange = renderDraft;
 
