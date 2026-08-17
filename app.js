@@ -201,6 +201,42 @@
     state.seedVersion = SEED_VERSION;
   }
 
+  // Recommended layout: MP-rotator heads on a head-to-head grid, four zones, pipe from the two bibs.
+  // H(u, v, radius, arc, aim, zone); aim 0 = toward the back yard, clockwise.
+  function recommendedPlan() {
+    const heads = [], pipes = [];
+    const H = (x, y, radius, arc, aim, zone) => heads.push({ id: newId(), x, y, type: 'mp', radius, arc, aim, zone });
+    const Pp = (zone, pts) => pipes.push({ id: newId(), zone, pts: pts.map((p) => (Array.isArray(p) ? { x: p[0], y: p[1] } : p)) });
+    const back = state.sources.find((x) => x.id === 's1') || state.sources[0];
+    const front = state.sources.find((x) => x.id === 's2') || state.sources[state.sources.length - 1];
+    const S = (src) => ({ x: src.x, y: src.y, sourceId: src.id });
+    // Zone 1 — front lawn, street half (rows v -12 and 9)
+    H(28.5, -12, 22, 90, 45, 1); H(50, -12, 22, 180, 0, 1); H(71, -12, 22, 90, 315, 1);
+    H(28.5, 9, 22, 180, 90, 1); H(50, 9, 22, 360, 0, 1); H(71, 9, 22, 180, 270, 1);
+    Pp(1, [S(front), [55, 44], [55, 9], [55, -12]]); Pp(1, [[28.5, 9], [71, 9]]); Pp(1, [[28.5, -12], [71, -12]]);
+    // Zone 2 — front lawn, house half (rows v 31 and 43)
+    H(28.5, 31, 22, 180, 90, 2); H(50, 31, 22, 360, 0, 2); H(71, 31, 22, 180, 270, 2);
+    H(30, 43, 20, 90, 135, 2); H(50, 43.5, 20, 180, 180, 2); H(70.5, 43.5, 20, 90, 225, 2);
+    Pp(2, [S(front), [53, 43.5], [53, 31]]); Pp(2, [[30, 43], [70.5, 43.5]]); Pp(2, [[28.5, 31], [71, 31]]);
+    // Zone 3 — left front lawn, fed from the back bib around the patio and through the gate
+    H(-3, 9, 12, 90, 45, 3); H(12.5, 9, 12, 90, 315, 3);
+    H(-3, 27, 12, 180, 90, 3); H(12.5, 27, 12, 180, 270, 3);
+    H(-3, 45, 12, 90, 135, 3); H(12, 45.5, 12, 90, 225, 3);
+    Pp(3, [S(back), [37, 85], [-5, 85], [-5, 52], [-3, 45], [-3, 9]]); Pp(3, [[-3, 45], [12, 45.5]]); Pp(3, [[-3, 27], [12.5, 27]]); Pp(3, [[-3, 9], [12.5, 9]]);
+    // Zone 4 — back yard + both side yards, from the back bib
+    H(-4.5, 82, 24, 90, 45, 4); H(19, 82.5, 24, 180, 0, 4); H(43, 81, 24, 180, 0, 4); H(66, 81, 24, 90, 315, 4);
+    H(-4.5, 105, 24, 90, 135, 4); H(19, 105.5, 24, 180, 180, 4); H(43, 105.5, 24, 180, 180, 4); H(66, 106, 24, 90, 225, 4);
+    Pp(4, [S(back), [37, 82], [-4.5, 82]]); Pp(4, [[37, 82], [66, 81]]); Pp(4, [[37, 82], [37, 105.5], [-4.5, 105]]); Pp(4, [[37, 105.5], [66, 106]]);
+    // Zone 5 — both side yards (small MP1000 heads), also from the back bib
+    H(-4.5, 52.5, 12, 90, 45, 5); H(12, 52.5, 12, 90, 315, 5); H(-4.5, 67, 12, 180, 90, 5); H(11, 67, 12, 180, 270, 5);
+    H(58, 56.5, 12, 90, 45, 5); H(69, 56.5, 12, 90, 315, 5); H(58, 70, 12, 180, 90, 5); H(69, 70, 12, 180, 270, 5);
+    Pp(5, [S(back), [37, 83], [-6, 83], [-6, 67], [-4.5, 67], [-4.5, 52.5], [12, 52.5]]); Pp(5, [[-4.5, 67], [11, 67]]);
+    Pp(5, [S(back), [58, 78], [69, 70], [69, 56.5], [58, 56.5]]); Pp(5, [[69, 70], [58, 70]]);
+    // snap pipe endpoints to the heads they touch
+    for (const p of pipes) for (const pt of p.pts) { const h = heads.find((hh) => Math.hypot(hh.x - pt.x, hh.y - pt.y) < 0.6); if (h) { pt.headId = h.id; pt.x = h.x; pt.y = h.y; } }
+    return { heads, pipes };
+  }
+
   // ---------- head physics ----------
   function effectiveRadius(head) {
     const t = HEAD_TYPES[head.type] || HEAD_TYPES.spray;
@@ -780,6 +816,13 @@
     const id = 's' + (state.nextId++);
     state.sources.push({ id, name: `Source ${state.sources.length + 1}`, x: 40, y: 20 });
     selectedSourceId = id; setMode('select'); save(); renderAll();
+  };
+  $('btn-recommend').onclick = () => {
+    if ((state.heads.length || state.pipes.length) && !confirmDelete('Replace the current heads and pipes with the recommended layout? Areas and water sources stay.')) return;
+    pushHistory();
+    const plan = recommendedPlan();
+    state.heads = plan.heads; state.pipes = plan.pipes; selectedHeadId = null; selectedShape = null;
+    save(); renderAll(); fitParcel();
   };
   $('btn-clear-pipes').onclick = () => { if (!state.pipes.length || !confirmDelete('Remove all pipe runs?')) return; pushHistory(); state.pipes = []; save(); renderAll(); };
   $('pipe-zone').onchange = renderDraft;

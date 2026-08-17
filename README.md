@@ -33,6 +33,23 @@ python3 -m http.server 8765   # then open http://localhost:8765
 | `img/` | web-size reference photos shown inside the app |
 | `Photos/` | original photos (the `.mov` is git-ignored) |
 
+## Recommended setup (v1 — before the bucket test)
+
+`Load recommended layout` in the Zones card drops this in. Assumes 50 PSI / 10 GPM; every zone stays under ~5.5 GPM so a hose-bib supply can run it.
+
+| Zone | Where | Heads | GPM | Fed from |
+|---|---|---|---|---|
+| 1 | Front lawn, street half | 6 × MP3000 (22 ft) | ≈4.5 | Front bib |
+| 2 | Front lawn, house half | 6 × MP3000 (20–22 ft) | ≈4.3 | Front bib |
+| 3 | Left front lawn (past the driveway) | 6 × MP1000 (12 ft) | ≈0.9 | Back bib, around the patio and through the gate |
+| 4 | Back yard | 8 × MP3000 (24 ft) | ≈5.4 | Back bib |
+| 5 | Left + right side yards | 8 × MP1000 (12 ft) | ≈1.4 | Back bib |
+| 6–7 | Beds: front beds, back fence bed, raised beds, gate/left beds | ½" drip line, 0.6 GPH @ 12" | ≈2 each | One drip zone per bib, with filter + 25 PSI regulator |
+
+Head-to-head spacing (each head reaches the next), corners quarter-circle, edges half, middles full. About 34 heads, ~780 ft of ¾" poly lateral (buy 1000 ft), 1" main from each bib to a 3–4 valve manifold, backflow preventer on each bib, one Wi-Fi controller (6–8 zones). Coverage of lawn + beds ≈ 93 %, head-to-head overlap ≈ 80 %.
+
+If the bucket test shows less than 7 GPM: keep the zones as they are (none exceeds 5.5). If it shows 12+ GPM: merge zones 1+2 and 4+5 to save two valves.
+
 ## Assumptions to check on site
 
 - Two water sources (hose bibs) as confirmed by Ryan: back wall right of the outdoor shower, and front wall near the right corner. Drag to fine-tune; `+ Water source` adds more; pipes snap to any of them.
