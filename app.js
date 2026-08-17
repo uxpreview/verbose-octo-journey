@@ -22,7 +22,7 @@
     aerial: { src: 'img/aerial-2025.jpg', u0: -30, u1: 90, v0: -25, v1: 125 }, // MassGIS spring 2025, pre-rotated
     sketch: { src: 'img/layout-sketch.jpg', u0: -31.4, u1: 77.05, v0: -25, v1: 110.6 }, // Ryan's layout sketch (11.8 px/ft)
   };
-  const SEED_VERSION = 4;
+  const SEED_VERSION = 5;
 
   const ZONE_COLORS = ['#6fd39b', '#4fb2ff', '#ffb648', '#ff6b9d', '#c48bff', '#4fe0d8'];
   const AREA_STYLE = {
@@ -31,6 +31,7 @@
     hardscape: { label: 'Hardscape', color: '#b9bbb6', fill: '#8d8f8a', order: 2, pattern: 'url(#pat-paver)' },
     structure: { label: 'Structure', color: '#3a3a3a', fill: '#ece8dc', order: 3, pattern: null },
     tree: { label: 'Tree', color: '#2f8f4a', fill: 'url(#grad-tree)', order: 4, pattern: null },
+    woods: { label: 'Woods', color: '#2f5f3a', fill: '#24422c', order: 0.5, pattern: 'url(#pat-woods)' },
     fence: { label: 'Fence', color: '#f4f4f4', fill: 'none', order: 5, pattern: null, open: true },
   };
   // Nozzle chart approximations. radius = nominal radius at rated PSI. gpm ≈ k * r^2 * arc/360.
@@ -76,6 +77,18 @@
     if (head.arc >= 360 || d < 0.01) return true;
     const diff = Math.abs((((bearing(head, p) - head.aim) % 360) + 540) % 360 - 180);
     return diff <= head.arc / 2 + 0.01;
+  }
+  // polygon strip of width w along a quadratic curve a→(control c)→b
+  function curvedStrip(a, c, b, w, n = 14) {
+    const left = [], right = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, mt = 1 - t;
+      const p = { x: mt * mt * a.x + 2 * mt * t * c.x + t * t * b.x, y: mt * mt * a.y + 2 * mt * t * c.y + t * t * b.y };
+      const d = { x: 2 * mt * (c.x - a.x) + 2 * t * (b.x - c.x), y: 2 * mt * (c.y - a.y) + 2 * t * (b.y - c.y) };
+      const L = Math.hypot(d.x, d.y) || 1, nx = -d.y / L, ny = d.x / L;
+      left.push({ x: p.x + nx * w / 2, y: p.y + ny * w / 2 }); right.push({ x: p.x - nx * w / 2, y: p.y - ny * w / 2 });
+    }
+    return [...left, ...right.reverse()];
   }
   function circlePoints(c, r, n = 40) { const pts = []; for (let i = 0; i < n; i++) pts.push({ x: c.x + r * Math.cos((2 * Math.PI * i) / n), y: c.y + r * Math.sin((2 * Math.PI * i) / n) }); return pts; }
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -146,7 +159,7 @@
       // hardscape
       A('hardscape', 'Driveway', [{ x: -0.5, y: -17 }, { x: 27, y: -17 }, { x: 27, y: 46.2 }, { x: 13.5, y: 46.2 }, { x: 13.5, y: 7.2 }, { x: -0.5, y: 7.2 }]),
       R('hardscape', 'Driveway steps', 27, 27, 31.3, 33),
-      A('hardscape', 'Walk to front door', [{ x: 31.3, y: 28.5 }, { x: 31.3, y: 32.5 }, { x: 40.5, y: 44.9 }, { x: 44, y: 44.9 }]),
+      A('hardscape', 'Walk to front door', curvedStrip({ x: 42.2, y: 44.9 }, { x: 42.6, y: 31 }, { x: 31.3, y: 30.2 }, 3.4)),
       R('hardscape', 'Side steps', 9.7, 37.7, 13.5, 42.8),
       R('hardscape', 'Front steps', 38.9, 44.9, 45.3, 54.7),
       R('hardscape', 'Patio', 11.8, 68.2, 27.5, 81.8),
@@ -156,7 +169,7 @@
       A('bed', 'Front bed (left)', [{ x: 28.3, y: 44.9 }, { x: 38.9, y: 44.9 }, { x: 38.9, y: 54.7 }, { x: 28.3, y: 54.7 }, { x: 27.9, y: 50 }]),
       R('bed', 'Front bed (right)', 45.3, 44.5, 69.9, 55.1),
       R('bed', 'Bed by shed', 5, 96, 7.5, 103.4),
-      R('bed', 'Bed below shed', -3, 89.8, 6.7, 92.8),
+      R('bed', 'Bed below shed', -3.9, 90.5, 5.4, 93.6),
       R('bed', 'Left fence bed 1', -4.7, 84.7, -1.3, 87.7),
       R('bed', 'Left fence bed 2', -4.3, 76.7, -1.3, 81),
       R('bed', 'Left fence bed 3', -4.7, 72, -1.7, 74.6),
@@ -164,9 +177,11 @@
       R('bed', 'Gate bed 2', 5.9, 47.5, 8, 50),
       R('bed', 'Gate bed 3', 9.7, 46.2, 12.2, 49.2),
       R('bed', 'Climbing plant', 27.1, 86.9, 34.3, 89.8),
-      R('bed', 'Raised bed 1', 61.4, 68.6, 65.6, 71.2),
-      R('bed', 'Raised bed 2', 60.1, 62.3, 65.2, 64.8),
+      R('bed', 'Raised bed 1', 61.15, 68.6, 65.35, 71.2),
+      R('bed', 'Raised bed 2', 60.7, 62.3, 65.8, 64.8),
       R('bed', 'Raised bed 3', 58.8, 56.4, 67.7, 58.9),
+      // woods left of the fence, plus the strip in front of it down to the driveway apron
+      A('woods', 'Woods', [{ x: -6, y: 106.4 }, { x: -17, y: 107 }, { x: -17, y: 50.8 }, { x: -12, y: 50.8 }, { x: -12, y: 8 }, { x: -4.3, y: 8 }, { x: -4.3, y: 16 }, { x: -6, y: 25 }, { x: -6, y: 50.8 }]),
       // structures
       A('structure', 'House', [{ x: 13.1, y: 46.2 }, { x: 27.9, y: 46.2 }, { x: 27.9, y: 54.7 }, { x: 57.1, y: 54.7 }, { x: 57.1, y: 79.7 }, { x: 27.9, y: 79.7 }, { x: 27.9, y: 68.2 }, { x: 13.1, y: 68.2 }], { house: true }),
       R('structure', 'Shed', -3.9, 93.6, 5.4, 103.4),
@@ -217,6 +232,7 @@
       <pattern id="pat-bed" width="2.5" height="2.5" patternUnits="userSpaceOnUse"><rect width="2.5" height="2.5" fill="#7c5f39"/><circle cx="1.25" cy="1.25" r="0.55" fill="#4f8a49" opacity="0.8"/><circle cx="0.3" cy="2.2" r="0.25" fill="#5f9a56" opacity="0.6"/></pattern>
       <pattern id="pat-paver" width="4" height="2" patternUnits="userSpaceOnUse"><rect width="4" height="2" fill="#8d8f8a"/><path d="M0,0 H4 M0,1 H4 M2,0 V1 M0,1 V2 M4,1 V2" stroke="#7a7c77" stroke-width="0.12"/></pattern>
       <pattern id="pat-asphalt" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#3a3d42"/><circle cx="1" cy="2" r="0.2" fill="#454850"/><circle cx="4" cy="5" r="0.2" fill="#33363b"/></pattern>
+      <pattern id="pat-woods" width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="#24422c"/><circle cx="1.5" cy="1.5" r="1.1" fill="#2e5a38"/><circle cx="3.8" cy="3.6" r="0.9" fill="#1c3623"/><circle cx="4.2" cy="1" r="0.5" fill="#33653f"/></pattern>
       <radialGradient id="grad-tree"><stop offset="0" stop-color="#2f8f4a" stop-opacity="0.65"/><stop offset="0.8" stop-color="#2f8f4a" stop-opacity="0.45"/><stop offset="1" stop-color="#2f8f4a" stop-opacity="0.15"/></radialGradient>
       <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0.6" dy="0.9" stdDeviation="0.6" flood-color="#000" flood-opacity="0.45"/></filter>
       <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0.2" dy="0.3" stdDeviation="0.3" flood-color="#000" flood-opacity="0.35"/></filter>`;
@@ -442,7 +458,7 @@
     const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = hgt;
     const ctx = canvas.getContext('2d'); const img = ctx.createImageData(w, hgt);
     const target = state.areas.filter((a) => a.type === 'lawn' || a.type === 'bed');
-    const skip = state.areas.filter((a) => a.type === 'hardscape' || a.type === 'structure');
+    const skip = state.areas.filter((a) => a.type === 'hardscape' || a.type === 'structure' || a.type === 'woods');
     const heads = state.heads.map((h) => ({ h, r: effectiveRadius(h) }));
     let n = 0, c1 = 0, c2 = 0;
     for (let py = 0; py < hgt; py++) {
