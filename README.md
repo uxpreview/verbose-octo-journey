@@ -35,7 +35,7 @@ python3 -m http.server 8765   # then open http://localhost:8765
 
 ## Recommended setup (v1 — before the bucket test)
 
-`Load recommended layout` in the Zones card drops this in. Assumes 50 PSI / 10 GPM; every zone stays under ~5.5 GPM so a hose-bib supply can run it.
+Top bar → **Recommended layout** shows it (your own heads and pipes stay parked under **My layout**; `Use as my layout` copies it over so you can edit). Assumes 50 PSI / 10 GPM; every zone stays under ~5.5 GPM so a hose-bib supply can run it.
 
 | Zone | Where | Heads | GPM | Fed from |
 |---|---|---|---|---|

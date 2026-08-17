@@ -100,6 +100,8 @@
     defaults: { type: 'spray', arc: 180, radius: 12 },
     sources: defaultSources(),
     heads: [], pipes: [], areas: [],
+    activeLayout: 'mine', // 'mine' | 'recommended'
+    shelved: null, // the inactive layout's {heads, pipes}
     seedVersion: SEED_VERSION,
     nextId: 1,
   });
@@ -529,6 +531,9 @@
 
   // ---------- panel ----------
   function renderPanel() {
+    $('sel-layout').value = state.activeLayout;
+    $('btn-copy-rec').hidden = state.activeLayout !== 'recommended';
+    $('btn-regen').textContent = state.activeLayout === 'recommended' ? 'Rebuild recommended' : 'Build recommended';
     $('psi').value = state.supply.psi; $('psi-out').value = state.supply.psi;
     $('gpm').value = state.supply.gpm; $('gpm-out').value = state.supply.gpm;
     $('def-type').value = state.defaults.type; $('def-arc').value = String(state.defaults.arc);
@@ -817,12 +822,30 @@
     state.sources.push({ id, name: `Source ${state.sources.length + 1}`, x: 40, y: 20 });
     selectedSourceId = id; setMode('select'); save(); renderAll();
   };
-  $('btn-recommend').onclick = () => {
-    if ((state.heads.length || state.pipes.length) && !confirmDelete('Replace the current heads and pipes with the recommended layout? Areas and water sources stay.')) return;
+  // Two layouts live side by side: 'mine' (hand-placed) and 'recommended' (generated). Switching
+  // shelves the inactive one's heads + pipes so nothing is lost. Areas and water sources are shared.
+  function switchLayout(to) {
+    if (to === state.activeLayout) return;
     pushHistory();
-    const plan = recommendedPlan();
-    state.heads = plan.heads; state.pipes = plan.pipes; selectedHeadId = null; selectedShape = null;
-    save(); renderAll(); fitParcel();
+    const current = { heads: state.heads, pipes: state.pipes };
+    let next = state.shelved;
+    if (to === 'recommended' && (!next || !next.heads.length)) next = recommendedPlan();
+    if (!next) next = { heads: [], pipes: [] };
+    state.shelved = current; state.heads = next.heads; state.pipes = next.pipes; state.activeLayout = to;
+    selectedHeadId = null; selectedShape = null; save(); renderAll();
+  }
+  $('sel-layout').onchange = (e) => switchLayout(e.target.value);
+  $('btn-regen').onclick = () => {
+    if (state.activeLayout !== 'recommended') { switchLayout('recommended'); }
+    if (state.heads.length && !confirmDelete('Rebuild the recommended layout from scratch? Your edits to it will be lost.')) return;
+    pushHistory(); const plan = recommendedPlan(); state.heads = plan.heads; state.pipes = plan.pipes; selectedHeadId = null; selectedShape = null; save(); renderAll();
+  };
+  $('btn-copy-rec').onclick = () => {
+    if (state.activeLayout !== 'recommended') return;
+    if (state.shelved && (state.shelved.heads.length || state.shelved.pipes.length) && !confirmDelete('Overwrite "My layout" with a copy of the recommended layout?')) return;
+    pushHistory();
+    state.shelved = JSON.parse(JSON.stringify({ heads: state.heads, pipes: state.pipes }));
+    switchLayout('mine');
   };
   $('btn-clear-pipes').onclick = () => { if (!state.pipes.length || !confirmDelete('Remove all pipe runs?')) return; pushHistory(); state.pipes = []; save(); renderAll(); };
   $('pipe-zone').onchange = renderDraft;
