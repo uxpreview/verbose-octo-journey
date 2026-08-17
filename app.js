@@ -18,7 +18,11 @@
   // plan frame: origin at the parcel's front-left corner, u along the street, v into the lot
   const FRAME = { ox: -35, oy: -3, ux: 0.524, uy: -0.852, vx: 0.852, vy: 0.524 };
   const NORTH_DEG = -58.4; // screen rotation of true north (counter-clockwise from up)
-  const AERIAL = { src: 'img/aerial-2025.jpg', u0: -30, u1: 90, v0: -25, v1: 125 };
+  const UNDERLAYS = {
+    aerial: { src: 'img/aerial-2025.jpg', u0: -30, u1: 90, v0: -25, v1: 125 }, // MassGIS spring 2025, pre-rotated
+    sketch: { src: 'img/layout-sketch.jpg', u0: -31.4, u1: 77.05, v0: -25, v1: 110.6 }, // Ryan's layout sketch (11.8 px/ft)
+  };
+  const SEED_VERSION = 3;
 
   const ZONE_COLORS = ['#6fd39b', '#4fb2ff', '#ffb648', '#ff6b9d', '#c48bff', '#4fe0d8'];
   const AREA_STYLE = {
@@ -81,8 +85,9 @@
     version: 2,
     supply: { psi: 50, gpm: 10 },
     defaults: { type: 'spray', arc: 180, radius: 12 },
-    source: { x: 33, y: 77.5 },
+    source: { x: 37, y: 79 },
     heads: [], pipes: [], areas: [],
+    seedVersion: SEED_VERSION,
     nextId: 1,
   });
   let state = loadState();
@@ -96,7 +101,11 @@
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return Object.assign(defaultState(), JSON.parse(raw));
+      if (raw) {
+        const st = Object.assign(defaultState(), JSON.parse(raw));
+        if ((st.seedVersion || 0) < SEED_VERSION && !st.heads.length && !st.pipes.length) st.areas = [];
+        return st;
+      }
       const old = localStorage.getItem(LEGACY_KEY);
       if (old) {
         const s = JSON.parse(old);
@@ -123,30 +132,53 @@
   }
   const newId = () => state.nextId++;
 
-  // Site sketch in plan feet, read off the 2025 aerial + drone photos. All editable.
+  // Site layout in plan feet, traced from Ryan's layout sketch (Photos/layout.heic, ~11.8 px/ft)
+  // with the 2025 aerial as a cross-check. Every shape stays editable.
   function seedAreas() {
     const A = (type, name, pts, extra) => ({ id: newId(), type, name, pts, ...(extra || {}) });
+    const R = (type, name, u0, v0, u1, v1) => A(type, name, [{ x: u0, y: v0 }, { x: u1, y: v0 }, { x: u1, y: v1 }, { x: u0, y: v1 }]);
+    state.areas = state.areas.filter((a) => a.keep);
     state.areas.push(
-      A('lawn', 'Left front', [{ x: -9, y: 8 }, { x: 10, y: 0 }, { x: 10, y: 44 }, { x: -11.5, y: 44 }]),
-      A('hardscape', 'Driveway', [{ x: 10, y: 0 }, { x: 27, y: 0 }, { x: 27, y: 44.4 }, { x: 10, y: 44.4 }]),
-      A('lawn', 'Front lawn', [{ x: 27, y: 0 }, { x: 72.4, y: 0 }, { x: 69.3, y: 52 }, { x: 43, y: 52 }, { x: 43, y: 47 }, { x: 37, y: 47 }, { x: 37, y: 52 }, { x: 26, y: 52 }, { x: 26, y: 44.4 }, { x: 27, y: 44.4 }]),
-      A('hardscape', 'Front walk', [{ x: 37.5, y: 47 }, { x: 42, y: 47 }, { x: 36, y: 28 }, { x: 33, y: 0 }, { x: 30, y: 0 }, { x: 33, y: 28 }]),
-      A('bed', 'Front bed (left)', [{ x: 26, y: 49.5 }, { x: 37, y: 49.5 }, { x: 37, y: 53.4 }, { x: 26, y: 53.4 }]),
-      A('bed', 'Front bed (right)', [{ x: 42.5, y: 49.5 }, { x: 58, y: 49.5 }, { x: 58, y: 53.4 }, { x: 42.5, y: 53.4 }]),
-      A('lawn', 'Right side yard', [{ x: 55.6, y: 53.4 }, { x: 68.6, y: 53.4 }, { x: 66.8, y: 77 }, { x: 55.6, y: 77 }]),
-      A('bed', 'Planters', [{ x: 57, y: 62 }, { x: 61, y: 62 }, { x: 61, y: 74 }, { x: 57, y: 74 }]),
-      A('lawn', 'Left side yard', [{ x: -11.5, y: 44 }, { x: 11.5, y: 44 }, { x: 11.5, y: 66.25 }, { x: 25, y: 66.25 }, { x: 25, y: 77.2 }, { x: -12.5, y: 77.2 }]),
-      A('hardscape', 'Patio', [{ x: 12, y: 66.25 }, { x: 25, y: 66.25 }, { x: 25, y: 80 }, { x: 12, y: 80 }]),
-      A('lawn', 'Back yard', [{ x: -12.5, y: 77.2 }, { x: 12, y: 77.2 }, { x: 12, y: 80 }, { x: 25, y: 80 }, { x: 25, y: 77.2 }, { x: 66.8, y: 77 }, { x: 64.6, y: 108.5 }, { x: -13.8, y: 102 }]),
-      A('bed', 'Back fence bed', [{ x: -13.5, y: 99 }, { x: 64.7, y: 105.5 }, { x: 64.6, y: 108.5 }, { x: -13.8, y: 102 }]),
-      A('bed', 'Right fence bed', [{ x: 63.8, y: 77 }, { x: 66.8, y: 77 }, { x: 64.7, y: 105.5 }, { x: 61.7, y: 105.3 }]),
-      A('structure', 'House', [{ x: 11.5, y: 44.4 }, { x: 26, y: 44.4 }, { x: 26, y: 53.4 }, { x: 37, y: 53.4 }, { x: 37, y: 47 }, { x: 42.5, y: 47 }, { x: 42.5, y: 53.4 }, { x: 55.6, y: 53.4 }, { x: 55.6, y: 77.2 }, { x: 25, y: 77.2 }, { x: 25, y: 66.25 }, { x: 11.5, y: 66.25 }], { house: true }),
-      A('structure', 'Shed', [{ x: -6, y: 91 }, { x: 5, y: 91 }, { x: 5, y: 100 }, { x: -6, y: 100 }]),
-      A('hardscape', 'Fire pit', circlePoints({ x: 15, y: 99 }, 2, 16)),
+      // lawns
+      A('lawn', 'Left front', [{ x: -17, y: -14 }, { x: -0.5, y: -14 }, { x: -0.5, y: 7.2 }, { x: 13.5, y: 7.2 }, { x: 13.5, y: 46.2 }, { x: -6, y: 46.2 }, { x: -6, y: 50.8 }, { x: -17, y: 50.8 }]),
+      A('lawn', 'Front lawn', [{ x: 29.2, y: -14 }, { x: 73.7, y: -14 }, { x: 72, y: 55.5 }, { x: 69.9, y: 55.5 }, { x: 69.9, y: 44.5 }, { x: 29.2, y: 44.5 }]),
+      A('lawn', 'Back yard', [{ x: -6, y: 50.8 }, { x: 13.1, y: 50.8 }, { x: 13.1, y: 55.5 }, { x: 69.9, y: 55.5 }, { x: 67.3, y: 106.8 }, { x: -6, y: 106.4 }]),
+      // hardscape
+      A('hardscape', 'Driveway', [{ x: -0.5, y: -17 }, { x: 27, y: -17 }, { x: 27, y: 46.2 }, { x: 13.5, y: 46.2 }, { x: 13.5, y: 7.2 }, { x: -0.5, y: 7.2 }]),
+      R('hardscape', 'Front walk', 27, -17, 29.2, 46.2),
+      R('hardscape', 'Walk landing', 27, 27, 31.3, 33),
+      R('hardscape', 'Side steps', 9.7, 37.7, 13.5, 42.8),
+      R('hardscape', 'Front steps', 38.9, 44.9, 45.3, 54.7),
+      R('hardscape', 'Patio', 11.8, 68.2, 27.5, 81.8),
+      A('hardscape', 'Fire pit', circlePoints({ x: 20.4, y: 96.4 }, 2.1, 16)),
+      // gardens
+      A('bed', 'Back fence bed', [{ x: 10, y: 102 }, { x: 66.9, y: 102 }, { x: 66.9, y: 106.8 }, { x: 10, y: 106.4 }]),
+      A('bed', 'Front bed (left)', [{ x: 28.3, y: 44.9 }, { x: 38.9, y: 44.9 }, { x: 38.9, y: 54.7 }, { x: 28.3, y: 54.7 }, { x: 27.9, y: 50 }]),
+      R('bed', 'Front bed (right)', 45.3, 44.5, 69.9, 55.1),
+      R('bed', 'Bed by shed', 5, 96, 7.5, 103.4),
+      R('bed', 'Bed below shed', -3, 89.8, 6.7, 92.8),
+      R('bed', 'Left fence bed 1', -4.7, 84.7, -1.3, 87.7),
+      R('bed', 'Left fence bed 2', -4.3, 76.7, -1.3, 81),
+      R('bed', 'Left fence bed 3', -4.7, 72, -1.7, 74.6),
+      R('bed', 'Gate bed 1', -4.7, 46.2, -0.9, 49.2),
+      R('bed', 'Gate bed 2', 5.9, 47.5, 8, 50),
+      R('bed', 'Gate bed 3', 9.7, 46.2, 12.2, 49.2),
+      R('bed', 'Climbing plant', 27.1, 86.9, 34.3, 89.8),
+      R('bed', 'Raised bed 1', 61.4, 68.6, 65.6, 71.2),
+      R('bed', 'Raised bed 2', 60.1, 62.3, 65.2, 64.8),
+      R('bed', 'Raised bed 3', 58.8, 56.4, 67.7, 58.9),
+      // structures
+      A('structure', 'House', [{ x: 13.1, y: 46.2 }, { x: 27.9, y: 46.2 }, { x: 27.9, y: 54.7 }, { x: 57.1, y: 54.7 }, { x: 57.1, y: 79.7 }, { x: 27.9, y: 79.7 }, { x: 27.9, y: 68.2 }, { x: 13.1, y: 68.2 }], { house: true }),
+      R('structure', 'Shed', -3.9, 93.6, 5.4, 103.4),
+      R('structure', 'Outdoor shower', 27.5, 79.7, 35.1, 86.9),
+      // tree (from the aerial; not on the sketch)
       A('tree', 'Big tree', circlePoints({ x: -4, y: 82 }, 17, 40)),
-      A('fence', 'Yard fence', [{ x: 11.5, y: 50 }, { x: -11.5, y: 50 }, { x: -13.8, y: 102 }, { x: 64.6, y: 108.5 }, { x: 69, y: 52 }, { x: 55.6, y: 52 }], { open: true }),
+      // fences
+      A('fence', 'Yard fence', [{ x: 13.1, y: 50.8 }, { x: -6, y: 50.8 }, { x: -6, y: 106.4 }, { x: 67.3, y: 106.8 }, { x: 73.7, y: 1.3 }], { open: true }),
+      A('fence', 'Side gate fence', [{ x: 57.1, y: 55.5 }, { x: 69.9, y: 55.5 }], { open: true }),
     );
-    state.source = { x: 33, y: 77.5 };
+    state.source = { x: 37, y: 79 };
+    state.seedVersion = SEED_VERSION;
   }
 
   // ---------- head physics ----------
@@ -252,17 +284,16 @@
     el('rect', { x: -400, y: -400, width: 800, height: 800, fill: '#1a221c' }, g);
     el('polygon', { points: pointsAttr(parcel), fill: '#2b3a2f' }, g); // bare earth inside the lot
     // street (v -36..-11), verge (-11..0) with a sidewalk slab
-    el('rect', { x: -200, y: 11, width: 400, height: 25, fill: 'url(#pat-asphalt)' }, g);
-    el('rect', { x: -200, y: 0, width: 400, height: 11, fill: '#5b615c' }, g);
-    el('rect', { x: -200, y: 5, width: 400, height: 4, fill: '#7d837e' }, g);
-    el('line', { x1: -200, y1: 24, x2: 200, y2: 24, stroke: '#d9c86a', 'stroke-width': 0.35, 'stroke-dasharray': '6 5' }, g);
+    el('rect', { x: -200, y: 18, width: 400, height: 30, fill: 'url(#pat-asphalt)' }, g); // Low St, v -18..-48
+    el('rect', { x: -200, y: 0, width: 400, height: 18, fill: '#4f5a50' }, g); // verge
+    el('rect', { x: -200, y: 14, width: 400, height: 4, fill: '#7d837e' }, g); // sidewalk
+    el('rect', { x: -44, y: -140, width: 25, height: 158, fill: 'url(#pat-asphalt)' }, g); // side street on the left, u -44..-19
+    el('line', { x1: -200, y1: 33, x2: 200, y2: 33, stroke: '#d9c86a', 'stroke-width': 0.35, 'stroke-dasharray': '6 5' }, g);
     const u = groups.underlay; clear(u);
-    const tracing = $('chk-aerial').checked;
-    groups.areas.setAttribute('opacity', tracing ? 0.35 : 1);
-    groups.features.setAttribute('opacity', tracing ? 0.55 : 1);
-    if (tracing) {
-      el('image', { href: AERIAL.src, x: AERIAL.u0, y: -AERIAL.v1, width: AERIAL.u1 - AERIAL.u0, height: AERIAL.v1 - AERIAL.v0, preserveAspectRatio: 'none', opacity: $('aerial-opacity').value }, u);
-    }
+    const UL = UNDERLAYS[$('sel-underlay').value];
+    groups.areas.setAttribute('opacity', UL ? 0.35 : 1);
+    groups.features.setAttribute('opacity', UL ? 0.55 : 1);
+    if (UL) el('image', { href: UL.src, x: UL.u0, y: -UL.v1, width: UL.u1 - UL.u0, height: UL.v1 - UL.v0, preserveAspectRatio: 'none', opacity: $('aerial-opacity').value }, u);
   }
 
   function renderParcel() {
@@ -386,7 +417,7 @@
 
   function renderLabels() {
     const g = groups.labels; clear(g);
-    el('text', { x: 30, y: 30, 'font-size': px(13), fill: '#c8c8c8', 'text-anchor': 'middle', 'font-weight': 600, 'letter-spacing': px(2), 'pointer-events': 'none', opacity: 0.8 }, g).textContent = 'LOW STREET';
+    el('text', { x: 30, y: 38, 'font-size': px(13), fill: '#c8c8c8', 'text-anchor': 'middle', 'font-weight': 600, 'letter-spacing': px(2), 'pointer-events': 'none', opacity: 0.8 }, g).textContent = 'LOW STREET';
     if (!$('chk-labels').checked) return;
     for (const a of state.areas) {
       if (a.type === 'fence' || a.house) continue;
@@ -677,7 +708,8 @@
   $('zoom-out').onclick = () => zoomAt(1.25, view.x + view.w / 2, view.y + view.h / 2);
   $('chk-coverage').onchange = renderAll;
   $('chk-labels').onchange = renderLabels;
-  $('chk-aerial').onchange = renderGround;
+  $('sel-underlay').onchange = renderGround;
+  $('btn-reseed').onclick = () => { if (!confirmDelete('Replace all areas with the traced layout? Heads and pipes stay.')) return; pushHistory(); seedAreas(); selectedShape = null; save(); renderAll(); };
   $('aerial-opacity').oninput = renderGround;
   $('compass-rot').setAttribute('transform', `rotate(${NORTH_DEG})`);
 

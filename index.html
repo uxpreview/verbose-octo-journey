@@ -23,7 +23,11 @@
     <button id="btn-fit" class="ghost" title="Zoom to lot">Fit lot</button>
     <label class="check"><input type="checkbox" id="chk-coverage" checked /> Coverage</label>
     <label class="check"><input type="checkbox" id="chk-labels" checked /> Labels</label>
-    <label class="check" title="Show the spring-2025 aerial photo under the drawing, for tracing"><input type="checkbox" id="chk-aerial" /> Aerial underlay</label>
+    <select id="sel-underlay" title="Show a reference image under the drawing, for tracing">
+      <option value="none">No underlay</option>
+      <option value="sketch">Layout sketch</option>
+      <option value="aerial">Aerial 2025</option>
+    </select>
     <input type="range" id="aerial-opacity" min="0.1" max="1" step="0.05" value="0.6" class="mini" title="Underlay opacity" />
   </div>
   <div class="hint" id="hint">Click a head to edit it. Drag to move.</div>
@@ -130,7 +134,7 @@
         <select id="pipe-zone" title="Zone for new pipe"></select>
         <button id="btn-clear-pipes" class="ghost">Clear pipes</button>
       </div>
-      <p class="small muted">Blue drop = water source (hose bib on the back wall by the patio — a guess). Drag it to the real spigot / manifold spot.</p>
+      <p class="small muted">Blue drop = water source (hose bib by the outdoor shower — a guess). Drag it to the real spigot / manifold spot.</p>
     </div>
 
     <div class="card" id="card-areas">
@@ -146,6 +150,7 @@
         </select>
       </div>
       <div id="areas-list" class="list"></div>
+      <div class="inline"><button id="btn-reseed" class="ghost" title="Replace all areas with the layout traced from the sketch">Reset areas to sketch</button></div>
       <p class="small muted">Coverage counts lawn + beds. Hardscape and structures are skipped.</p>
     </div>
 
