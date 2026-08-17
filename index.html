@@ -13,6 +13,11 @@
     <span class="brand-sub">Irrigation planner</span>
   </div>
   <div class="toolbar" role="toolbar" aria-label="Map tools">
+    <select id="sel-layout" title="Which sprinkler layout is shown. Areas and water sources are shared.">
+      <option value="mine">My layout</option>
+      <option value="recommended">Recommended layout</option>
+    </select>
+    <span class="sep"></span>
     <button class="tool" data-mode="select" aria-pressed="true" title="Select / drag (V)">Select</button>
     <button class="tool" data-mode="head" title="Add sprinkler head (H)">+ Head</button>
     <button class="tool" data-mode="pipe" title="Draw pipe / trench (P)">Pipe</button>
@@ -133,7 +138,8 @@
       <div class="inline">
         <select id="pipe-zone" title="Zone for new pipe"></select>
         <button id="btn-clear-pipes" class="ghost">Clear pipes</button>
-        <button id="btn-recommend" title="Load the recommended heads, zones and pipe runs">Load recommended layout</button>
+        <button id="btn-regen" class="ghost" title="Generate the recommended heads, zones and pipe runs (switches to the Recommended layout)">Build recommended</button>
+        <button id="btn-copy-rec" class="ghost" title="Copy the recommended layout into My layout so you can edit it">Use as my layout</button>
       </div>
       <div id="sources-list" class="list"></div>
       <div class="inline"><button id="btn-add-source" class="ghost">+ Water source</button></div>
