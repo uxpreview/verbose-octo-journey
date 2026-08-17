@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>154 Low St — Irrigation Planner</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -24,19 +23,19 @@
     <button id="btn-fit" class="ghost" title="Zoom to lot">Fit lot</button>
     <label class="check"><input type="checkbox" id="chk-coverage" checked /> Coverage</label>
     <label class="check"><input type="checkbox" id="chk-labels" checked /> Labels</label>
-    <select id="sel-basemap" title="Aerial photo year">
-      <option value="ma2025">MassGIS aerial 2025</option>
-      <option value="ma2023">MassGIS aerial 2023</option>
-      <option value="ma2021">MassGIS aerial 2021</option>
-      <option value="esri">Esri World Imagery</option>
-      <option value="none">No photo</option>
-    </select>
+    <label class="check" title="Show the spring-2025 aerial photo under the drawing, for tracing"><input type="checkbox" id="chk-aerial" /> Aerial underlay</label>
+    <input type="range" id="aerial-opacity" min="0.1" max="1" step="0.05" value="0.6" class="mini" title="Underlay opacity" />
   </div>
   <div class="hint" id="hint">Click a head to edit it. Drag to move.</div>
 </header>
 
 <main class="layout">
-  <div id="map" aria-label="Map of the property"></div>
+  <div id="map" aria-label="Plan view of the property">
+    <svg id="plan" xmlns="http://www.w3.org/2000/svg" tabindex="0"></svg>
+    <div class="compass" id="compass" title="North"><svg viewBox="-12 -12 24 24"><g id="compass-rot"><path d="M0,-10 L4,4 L0,1 L-4,4 Z" fill="#fff"/><text y="-11" font-size="6" text-anchor="middle" fill="#fff" dominant-baseline="auto"></text></g></svg><span>N</span></div>
+    <div class="scalebar" id="scalebar"><div class="bar"></div><span id="scale-txt">10 ft</span></div>
+    <div class="zoomctl"><button id="zoom-in" title="Zoom in">+</button><button id="zoom-out" title="Zoom out">−</button></div>
+  </div>
 
   <section class="panel">
     <div class="card" id="card-supply">
@@ -101,7 +100,7 @@
           <input type="range" id="h-arc" min="30" max="360" step="5" value="180" />
         </div>
         <div class="row">
-          <label for="h-aim">Aim <output id="h-aim-out">0</output>° (compass)</label>
+          <label for="h-aim">Aim <output id="h-aim-out">0</output>° (0 = toward back yard) — or drag the white handle</label>
           <input type="range" id="h-aim" min="0" max="359" step="1" value="0" />
         </div>
         <div class="row">
@@ -131,7 +130,7 @@
         <select id="pipe-zone" title="Zone for new pipe"></select>
         <button id="btn-clear-pipes" class="ghost">Clear pipes</button>
       </div>
-      <p class="small muted">Blue pin = water source. Drag it to the real spigot / manifold spot.</p>
+      <p class="small muted">Blue drop = water source (hose bib on the back wall by the patio — a guess). Drag it to the real spigot / manifold spot.</p>
     </div>
 
     <div class="card" id="card-areas">
@@ -143,6 +142,7 @@
           <option value="hardscape">Hardscape (patio, drive, walk)</option>
           <option value="structure">Structure (shed, deck)</option>
           <option value="tree">Tree canopy</option>
+          <option value="fence">Fence line</option>
         </select>
       </div>
       <div id="areas-list" class="list"></div>
@@ -165,7 +165,6 @@
   </section>
 </main>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="app.js"></script>
 </body>
 </html>
