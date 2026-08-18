@@ -647,18 +647,52 @@ const scaleDialog = $('scale-dialog');
 const scaleCanvas = $('scale-canvas');
 let scalePts = [];
 
+/** Longest edge, in pixels, that a traced image is kept at. A phone photo is
+ *  4000 px and 3-8 MB; as a data URL inside the saved plan that blows the
+ *  ~5 MB localStorage quota and the plan silently stops persisting. At 2000 px
+ *  the underlay is still sharper than anyone traces, and it fits. */
+const MAX_IMAGE_EDGE = 2000;
+/** Above this, a data URL is re-encoded even if it is not oversized: a large
+ *  PNG screenshot is worth as much as a JPEG once it is only an underlay. */
+const MAX_IMAGE_BYTES = 1_500_000;
+
+/** Bring an image down to something the plan can carry: bounded on its long
+ *  edge and re-encoded as JPEG on a white ground (a transparent sketch would
+ *  otherwise come out black). Small images pass through untouched so a crisp
+ *  little plan drawing keeps its pixels. Resolves to {img, src}. */
+function shrinkImage(img, src) {
+  const long = Math.max(img.width, img.height);
+  const s = Math.min(1, MAX_IMAGE_EDGE / long);
+  if (s === 1 && src.length <= MAX_IMAGE_BYTES) return Promise.resolve({ img, src });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(img.width * s));
+  canvas.height = Math.max(1, Math.round(img.height * s));
+  const c = canvas.getContext('2d');
+  c.fillStyle = '#fff';
+  c.fillRect(0, 0, canvas.width, canvas.height);
+  c.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const out = canvas.toDataURL('image/jpeg', 0.85);
+  return new Promise((resolve) => {
+    const small = new Image();
+    small.onload = () => resolve({ img: small, src: out });
+    small.onerror = () => resolve({ img, src }); // keep the original rather than lose the picture
+    small.src = out;
+  });
+}
+
 function openImage(file, onDone) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
     const img = new Image();
-    img.onload = () => {
-      pendingImage = { img, src: reader.result, onDone };
+    img.onload = async () => {
+      const { img: use, src } = await shrinkImage(img, reader.result);
+      pendingImage = { img: use, src, onDone };
       scalePts = [];
       const maxW = 680;
-      const s = Math.min(1, maxW / img.width);
-      scaleCanvas.width = Math.round(img.width * s);
-      scaleCanvas.height = Math.round(img.height * s);
+      const s = Math.min(1, maxW / use.width);
+      scaleCanvas.width = Math.round(use.width * s);
+      scaleCanvas.height = Math.round(use.height * s);
       drawScaleCanvas();
       $('scale-status').textContent = 'Click the first point.';
       $('scale-dist').value = '';

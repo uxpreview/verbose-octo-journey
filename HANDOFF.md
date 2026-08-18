@@ -299,14 +299,16 @@ Sample yard: 0 runs under a building (was 1 real + 4 false), 610 ft of trench
 (was 586). Six new tests, including "no auto-laid trench goes under a
 building" on the sample plan.
 
-**7. Traced images are stored at full resolution.** `openImage` in
-`src/main.js` does `readAsDataURL` and stores the result in state, which is then
-`JSON.stringify`-ed into `localStorage`. A phone photo will blow the ~5 MB quota.
-It currently fails *gracefully* — `save()` returns false and the panel says so,
-pointing at Export — but the plan silently stops persisting from then on.
-
-*Fix:* downscale to ~2000 px on the long edge through a canvas before making the
-data URL. Small change, removes a whole class of confusing behaviour.
+**7. ~~Traced images are stored at full resolution.~~ Done**
+(`feat/image-downscale`). `shrinkImage` in `src/main.js` runs between the
+`FileReader` and the scale dialog: anything over 2000 px on the long edge, or
+over ~1.5 MB as a data URL, is redrawn through a canvas and re-encoded as JPEG
+at 0.85 on a white ground (a transparent sketch would otherwise come out
+black). Small images pass through untouched so a crisp little plan drawing
+keeps its pixels. Checked in Chromium: a 4000 × 3000 PNG lands in state as a
+2000 × 1500 JPEG of ~450 KB and the plan keeps saving; an 800 × 600 PNG is
+stored as the PNG it was. Still no network call — the canvas never leaves the
+page.
 
 ### Polish
 
