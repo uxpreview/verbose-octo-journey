@@ -10,7 +10,7 @@
 | **Landed** | [PR #6](https://github.com/uxpreview/verbose-octo-journey/pull/6) — **merged** |
 | **Deploys from** | `main` → `irrigation-planner-theta.vercel.app` |
 | **Intended host** | `irrigation.ryankm.com` — **assumed, not confirmed** (see §7.1) |
-| **Tests** | `npm test` — 34 passing on `main` |
+| **Tests** | `npm test` — 37 passing on `feat/zone-balance` (34 on `main`) |
 | **Handoff written** | 2026-08-18 |
 
 ---
@@ -133,9 +133,11 @@ that makes it a lab rather than a drawing program.
    gets a triangular lattice wherever the perimeter ring cannot reach.
 3. **Prune what earns nothing** (`pruneHeads`) — greedy, cheapest-first, keeping
    a removal only if coverage holds **and** head-to-head overlap barely moves.
-4. **Pack zones under the flow budget** (`chainByProximity`, `packZones`) — heads
-   walked in a nearest-neighbour chain from the source, packed greedily at 85 %
-   of measured flow, so a zone is a contiguous *place* in the yard.
+4. **Pack zones under the flow budget** (`chainByProximity`, `packZones`,
+   `balanceZones`, `zoneHeads`) — heads walked in a nearest-neighbour chain from
+   each source; the greedy pack fixes the valve count at 85 % of measured flow,
+   then a linear-partition DP re-cuts the chain into that many contiguous runs
+   with the lowest peak flow. Chain from whichever source needs fewest valves.
 5. **Trench as a spanning tree** (`trenchTree`) — Prim's MST per zone, edge
    weights multiplied where a run would cross a building (×8) or paving (×1.8).
 
@@ -259,25 +261,25 @@ turns the inner loop from "area" into "one head's footprint". Add a perf guard
 test so it cannot regress. Consider a progress indicator or a Web Worker
 regardless, since the button is synchronous today.
 
-**5. Zone packing leaves an orphan.** On the sample yard the packer produces:
+**5. ~~Zone packing leaves an orphan.~~ Done** (`feat/zone-balance`).
+`balanceZones` keeps the greedy zone count (for a fixed chain, greedy is
+already optimal for the *number* of contiguous zones) and re-cuts the chain by
+DP to minimise the busiest zone; `zoneHeads` tries a chain from every source
+and keeps the one with fewest valves. Sample yard at 10 GPM: 14 / 14 / 11 / 1
+→ 14 / 12 / 14 in three valves instead of four. At 6 GPM: 14 / 12 / 8 / 5 / 1
+→ 14 / 5 / 5 / 7 / 9. Zone 1 stays at 14 tiny sprays because
+`MAX_HEADS_PER_ZONE` binds before flow does — that is the cap, not a bug.
+Tests: balancing never adds a valve, never leaves an orphan, respects the head
+cap; no spray zone on the sample yard has fewer than 3 heads.
 
-| Zone | Heads | Flow |
-|---|---:|---:|
-| 1 | 14 | 2.39 GPM |
-| 2 | 14 | 6.20 GPM |
-| 3 | 11 | 7.46 GPM |
-| **4** | **1** | **1.32 GPM** |
-| 5 (drip) | 0 | 4.21 GPM |
-
-Zone 4 is a single head on its own valve — real money for nothing. Zone 1 is
-also head-capped rather than flow-capped: 14 tiny spray heads drawing 2.39 GPM
-against an 8.5 GPM budget, because `MAX_HEADS_PER_ZONE` is 14.
-
-*Fix:* a balancing pass after `packZones` that merges a trailing under-filled
-zone into an adjacent zone with headroom, or replace the greedy sequential pack
-with first-fit-decreasing / capacitated clustering. Watch the existing tests —
-they assert no zone exceeds budget, so a merge must respect both the flow and
-head caps.
+**5b. Nozzle sizing ignores the flow budget.** Found while doing 5. On a blank
+120 × 160 ft lot at 10 GPM the solver picks 42 ft rotors at 4.3 GPM each, and
+two of them exceed the 8.5 GPM budget — so it packs *one rotor per zone* and a
+200 × 260 ft lawn comes out as 27 zones. `pickNozzle` sizes to shape only.
+*Fix:* pass the budget in and step the radius (or the family, rotor → MP) down
+until at least two or three heads fit a zone; a designer with a small meter
+would run rotary nozzles at a shorter throw, not one rotor at a time. Add a
+test that a big blank lot at 10 GPM needs no more than heads/2 zones.
 
 **6. Trenches penalise crossing buildings but do not route around them.**
 `trenchTree` multiplies the edge weight for a run that crosses a structure, so
