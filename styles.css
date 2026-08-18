@@ -102,32 +102,68 @@ a, button, summary, label, [role="button"] { touch-action: manipulation; }
 /* --- The bar ----------------------------------------------------------- */
 /* A bar, not a breadcrumb. A breadcrumb says "you are inside this section",
    and here the parent link leaves the origin — it would be an exit dressed as
-   a way back up. */
+   a way back up. The wordmark carries the brand where a visitor expects to
+   find it, and the rule under it is the site's section rule rather than a
+   hairline: this is a boundary, not rhythm. Same bar as attention-lab. */
 
-.site-bar { border-bottom: 1px solid var(--line); background: var(--bg); }
+.site-bar { border-bottom: 1px solid var(--rule); background: var(--bg); }
 .bar-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  height: 56px;
+  padding-top: 18px;
+  padding-bottom: 18px;
 }
+/* Matches the site header exactly: 20px, 700, -0.02em, and the dot pops in
+   on load the way the site's does. */
 .wordmark {
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 16px;
-  letter-spacing: -0.01em;
+  font-size: 20px;
+  letter-spacing: -0.02em;
   color: var(--strong);
   text-decoration: none;
+  white-space: nowrap;
 }
-.wordmark .dot { color: var(--accent-warm-ink); }
+.wordmark .dot { display: inline-block; transform-origin: 50%; animation: dot-pop 0.36s var(--ease-expo) both; }
+@keyframes dot-pop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.08); }
+  to { transform: scale(1); }
+}
 .bar-back {
-  font-size: 13px;
-  color: var(--muted);
-  text-decoration: none;
+  position: relative;
   display: inline-flex;
-  gap: 5px;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  text-decoration: none;
+  white-space: nowrap;
 }
-.bar-back:hover, .wordmark:hover { color: var(--accent-ink); }
+.bar-back::after, .arrow-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -3px;
+  height: 1.5px;
+  width: 100%;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform var(--dur-struct) var(--ease-expo);
+}
+.bar-back span, .arrow-link span { transition: transform 0.2s ease; }
+@media (hover: hover) and (pointer: fine) {
+  .bar-back:hover::after, .arrow-link:hover::after { transform: scaleX(1); transform-origin: left center; }
+  .bar-back:hover span { transform: translateY(-2px); }
+  .arrow-link:hover span { transform: translateX(3px); }
+}
 
 /* --- Type -------------------------------------------------------------- */
 
@@ -140,82 +176,159 @@ a, button, summary, label, [role="button"] { touch-action: manipulation; }
   color: var(--muted);
   margin: 0;
 }
-.claim {
+.label-strong { color: var(--strong); }
+/* The wordmark dot: the site's one vermillion accent in display type. */
+.dot { color: var(--accent-warm); }
+
+/* The display size is capped lower than the site's hero, on purpose. This is a
+   tool, and a bigger masthead pushes the instrument below the fold. */
+.t-h1 {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: clamp(2.1rem, 5.2vw, 3.9rem);
-  line-height: 1.05;
+  font-size: clamp(44px, 6.6vw, 78px);
+  line-height: 0.92;
   letter-spacing: -0.03em;
   color: var(--strong);
-  margin: 14px 0 0;
-  max-width: 20ch;
+  text-wrap: balance;
+  margin: 24px 0 0;
+  max-width: 16ch;
 }
-.claim em { font-style: italic; color: var(--accent-warm-ink); }
-.lede {
-  font-size: clamp(1.05rem, 1.6vw, 1.28rem);
+.t-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(30px, 3.8vw, 54px);
+  line-height: 1.04;
+  letter-spacing: -0.015em;
+  color: var(--strong);
+  text-wrap: balance;
+  margin: 0;
+  max-width: 18ch;
+}
+.t-lede {
+  font-size: clamp(18px, 1.6vw, 21px);
   line-height: 1.55;
   color: var(--body-2);
-  max-width: 62ch;
-  margin: 20px 0 0;
+  text-wrap: pretty;
+  max-width: 58ch;
+  margin: 24px 0 0;
 }
 .small { font-size: 13px; line-height: 1.5; }
 .muted { color: var(--muted); }
 .danger-text { color: var(--signal-bad); }
 .empty { color: var(--muted); font-size: 13px; margin: 0; }
-
-.section-head {
-  margin: 64px 0 20px;
-  padding-top: 14px;
-  border-top: 2px solid var(--rule);
+.note {
+  color: var(--body-2);
+  font-size: 13.5px;
+  background: var(--tint);
+  border: 1px solid var(--edge);
+  padding: 12px 14px;
+  border-radius: 8px;
 }
-.section-head .label { display: block; }
 
-/* --- Start screen ------------------------------------------------------ */
+/* --- The experiment page shell ----------------------------------------- */
 
-.screen-start { padding: 48px 0 80px; }
-.hero { margin-bottom: 8px; }
+.exp-head { padding-top: 40px; }
+@media (min-width: 768px) { .exp-head { padding-top: 56px; } }
 
-.start-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 1fr;
+/* Record voice: number, kind, state, then a rule that runs out to the stack. */
+.exp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.exp-state { display: flex; align-items: center; gap: 8px; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.exp-rule { flex: 1; min-width: 40px; height: 1px; background: var(--line); }
+.exp-stack { display: none; }
+@media (min-width: 640px) { .exp-stack { display: block; } }
+
+.exp-body { padding-top: 40px; padding-bottom: 40px; }
+@media (min-width: 768px) { .exp-body { padding-top: 56px; padding-bottom: 56px; } }
+
+/* The masthead gives way on a laptop screen: the type and the two section
+   paddings stop scaling with the width on screens that do not have the height
+   for them, so the panel's controls stay above a 900px fold. */
+@media (min-height: 640px) and (max-height: 950px) {
+  .t-h1 { font-size: clamp(40px, 4.4vw, 60px); margin-top: 18px; }
+  .t-lede { margin-top: 18px; }
+  .exp-head { padding-top: 32px; }
+  .exp-body { padding-top: 32px; }
+  .setup-copy .t-display { font-size: clamp(28px, 3vw, 40px); }
+  .panel-lede { margin: 14px 0 20px; }
 }
-@media (min-width: 900px) { .start-grid { grid-template-columns: repeat(3, 1fr); } }
 
-.start-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  text-align: left;
+/* --- Start screen: the setup panel ------------------------------------- */
+
+.screen-start { padding-bottom: 0; }
+.resume-row { margin: 0 0 24px; }
+
+.panel-card {
   background: var(--surface);
   border: 1px solid var(--edge);
   border-radius: var(--r-card);
-  padding: 22px;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  transition: border-color var(--dur-micro) var(--ease-quint);
+  padding: 28px;
+  margin-bottom: 32px;
 }
-.start-card-form { cursor: default; }
-button.start-card:hover, .start-card-form:hover { border-color: var(--accent); }
-.start-kicker {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent-warm-ink);
-}
-.start-title { font-size: 1.22rem; font-weight: 700; color: var(--strong); letter-spacing: -0.015em; }
-.start-body { font-size: 13.5px; color: var(--body-2); }
-.start-go { margin-top: auto; padding-top: 6px; font-size: 13px; font-weight: 600; color: var(--accent-ink); }
+@media (min-width: 768px) { .panel-card { padding: 40px; } }
 
-.field-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+/* Two measures in one panel: the copy wants a reading measure, the controls
+   want the panel. Two columns let each keep its own width. */
+.setup-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+@media (min-width: 1000px) {
+  .setup-panel { grid-template-columns: minmax(300px, 36%) minmax(0, 1fr); gap: 56px; align-items: stretch; }
+}
+.setup-copy { display: flex; flex-direction: column; }
+.setup-copy .eyebrow { margin: 0 0 14px; }
+.panel-lede {
+  max-width: 62ch;
+  color: var(--body-2);
+  font-size: 16px;
+  line-height: 1.6;
+  margin: 16px 0 26px;
+}
+.setup-copy > .setup-privacy { margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
+.privacy-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.lock-glyph { position: relative; flex-shrink: 0; width: 10px; height: 12px; margin-top: 3px; }
+.lock-glyph::before {
+  content: ""; position: absolute; top: 0; left: 1.5px; width: 7px; height: 6px;
+  border: 1.5px solid currentColor; border-bottom: 0; border-radius: 3.5px 3.5px 0 0;
+}
+.lock-glyph::after {
+  content: ""; position: absolute; bottom: 0; left: 0; width: 10px; height: 7px;
+  background: currentColor; border-radius: 2px;
+}
+
+/* The three ways in, as rows: copy on the left, the one control on the right,
+   a hairline between them. */
+.setup-controls { display: flex; flex-direction: column; }
+.start-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px 32px;
+  align-items: center;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+}
+.start-item:first-child { border-top: 0; padding-top: 0; }
+.start-item:last-child { padding-bottom: 0; }
+@media (min-width: 640px) { .start-item { grid-template-columns: minmax(0, 1fr) auto; } }
+.start-copy { display: flex; flex-direction: column; gap: 6px; }
+.start-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--strong); letter-spacing: -0.01em; }
+.start-body { font-size: 14px; line-height: 1.55; color: var(--body-2); max-width: 52ch; }
+
+.field-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
 .times { color: var(--muted); padding-bottom: 8px; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--body-2); }
-.field > span { font-size: 12px; color: var(--muted); }
+.field > span { font-size: 12.5px; font-weight: 600; color: var(--body-2); }
 
-.resume-row { margin-top: 20px; }
 .linkish {
   background: none;
   border: 0;
@@ -228,26 +341,40 @@ button.start-card:hover, .start-card-form:hover { border-color: var(--accent); }
 }
 .linkish:hover { color: var(--accent-hover); }
 
-.bench {
+/* --- Bench notes + footer ---------------------------------------------- */
+
+.app-footer { padding-top: 8px; padding-bottom: 64px; }
+.notes-title { max-width: 16ch; }
+.bench-notes { margin: 32px 0 0; }
+.note-row {
   display: grid;
-  gap: 22px 40px;
   grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
 }
-@media (min-width: 820px) { .bench { grid-template-columns: 1fr 1fr; } }
-.bench-item h3 {
+.note-row:last-child { border-bottom: 1px solid var(--line); }
+@media (min-width: 768px) { .note-row { grid-template-columns: 220px 1fr; gap: 40px; } }
+.note-row dt { padding-top: 3px; }
+.note-row dd { margin: 0; max-width: 64ch; font-size: 16px; line-height: 1.65; color: var(--body); }
+.footer-credit { margin: 36px 0 0; display: flex; flex-wrap: wrap; gap: 10px 32px; }
+/* The site's arrow link: chase underline, arrow nudges on hover. */
+.arrow-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 500;
   font-size: 15px;
-  font-weight: 700;
-  color: var(--strong);
-  margin: 0 0 6px;
-  letter-spacing: -0.01em;
+  color: var(--accent-ink);
+  text-decoration: none;
 }
-.bench-item p { margin: 0; font-size: 14px; color: var(--body-2); max-width: 60ch; }
-.colophon { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
-.colophon a, .bench-item a { color: var(--accent-ink); }
+.arrow-link::after { bottom: -2px; }
 
 /* --- Controls ---------------------------------------------------------- */
 
-.btn, .ghost, .tool {
+.ghost, .tool {
   font: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -260,9 +387,27 @@ button.start-card:hover, .start-card-form:hover { border-color: var(--accent); }
   cursor: pointer;
   transition: background var(--dur-micro) var(--ease-quint), border-color var(--dur-micro) var(--ease-quint), color var(--dur-micro) var(--ease-quint);
 }
-.btn:hover, .ghost:hover, .tool:hover { border-color: var(--accent); background: var(--tint); color: var(--strong); }
-.btn-accent { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); font-weight: 600; }
-.btn-accent:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-contrast); }
+.ghost:hover, .tool:hover { border-color: var(--accent); background: var(--tint); color: var(--strong); }
+/* The site's button: an outlined pill that fills on hover, one filled per
+   screen for the committing action. Same recipe as attention-lab, a size down
+   so it sits inside the planner's panel. */
+.btn {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.005em;
+  line-height: 1.2;
+  background: transparent;
+  color: var(--strong);
+  border: 1.5px solid var(--edge);
+  border-radius: var(--r-chip);
+  padding: 10px 18px;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+.btn:hover { border-color: var(--strong); }
+.btn-primary, .btn-accent { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.btn-primary:hover, .btn-accent:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-contrast); }
 .btn-file { display: inline-flex; align-items: center; }
 .tool[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -292,14 +437,27 @@ input[type="range"] {
 
 /* --- Planner shell ----------------------------------------------------- */
 
-.screen-plan { display: flex; flex-direction: column; height: calc(100vh - 57px); }
+/* The planner sits on the same measure as the head above it — attention-lab's
+   session screen does the same — rather than bleeding to the viewport edge on
+   a wide monitor, where the drawing floated small in a field of paper while
+   the tools stayed 340px. --bar-h is the site bar's height: 18 + 32 + 18 + 1. */
+:root { --bar-h: 69px; }
+.screen-plan {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--bar-h));
+  width: 100%;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+@media (min-width: 768px) { .screen-plan { padding: 0 40px 32px; } }
 .plan-bar {
   display: flex;
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--line);
+  padding: 14px 0;
 }
 .plan-bar-left { display: flex; align-items: center; gap: 12px; }
 .back { font-size: 13px; text-decoration: none; }
@@ -317,15 +475,22 @@ input[type="range"] {
 .site-name:hover, .site-name:focus { border-color: var(--edge); background: var(--surface); }
 .toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .hint {
-  margin: 0;
-  padding: 7px 20px;
+  margin: 0 0 12px;
   font-size: 12.5px;
   color: var(--muted);
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
 }
 
-.plan-body { flex: 1 1 auto; display: flex; min-height: 0; }
+/* The drawing and its panel share one card, the way attention-lab's session
+   panel does; the toolbar and the hint sit above it on the page. */
+.plan-body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-card);
+  overflow: hidden;
+  background: var(--paper);
+}
 #map {
   position: relative;
   flex: 1 1 auto;
@@ -403,15 +568,15 @@ input[type="range"] {
 .sub summary { font-size: 13px; cursor: pointer; color: var(--accent-ink); }
 .sub > *:not(summary) { margin-top: 8px; }
 
-.notes { margin-top: 10px; display: grid; gap: 5px; }
-.notes p {
+.layout-notes { margin-top: 10px; display: grid; gap: 5px; }
+.layout-notes p {
   margin: 0;
   font-size: 12.5px;
   color: var(--body-2);
   padding-left: 11px;
   border-left: 2px solid var(--line);
 }
-.notes p:first-child { border-left-color: var(--accent-warm); color: var(--strong); }
+.layout-notes p:first-child { border-left-color: var(--accent-warm); color: var(--strong); }
 
 .list { margin-top: 8px; display: grid; gap: 1px; }
 .item {

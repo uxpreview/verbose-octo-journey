@@ -62,165 +62,206 @@
 
     <main id="app">
       <!-- ------------------------------------------------------ START --- -->
+      <!-- The same shape as EXP-038 (attention-lab): record voice, the name in
+           display type, the lede, then the experiment in a panel, then bench
+           notes and the trail back. -->
       <section class="screen screen-start" id="screen-start">
-        <div class="container">
-          <header class="hero">
-            <p class="eyebrow">EXP-039 · Vanilla JS · SVG · No build step</p>
-            <h1 class="claim">A sprinkler plan for <em>your</em> yard, not mine.</h1>
-            <p class="lede">
-              Draw the lot, say what your spigot actually delivers, and this
-              places the heads, sizes the nozzles to the shape of each piece of
-              ground, packs the zones under your flow budget, routes the
-              trenches around the house and prints a dig plan you can take to
-              the store. It runs entirely in your browser — no account, no
-              address, no server.
+        <header class="app-header">
+          <div class="container exp-head">
+            <div class="exp-meta">
+              <span class="label label-strong">EXP-039</span>
+              <span class="label">tool</span>
+              <span class="label label-strong exp-state"><span class="status-dot" aria-hidden="true"></span>Live</span>
+              <span class="exp-rule" aria-hidden="true"></span>
+              <span class="label exp-stack">Vanilla JS · SVG · Client-side only</span>
+            </div>
+            <h1 class="t-h1">Irrigation Lab<span class="dot">.</span></h1>
+            <p class="t-lede">
+              A sprinkler plan for your yard, not mine. Draw the lot, say what
+              your spigot actually delivers, and get the heads, the nozzles,
+              the zones, the trenches and a dig plan you can take to the store
+              — all in your browser, with nothing sent anywhere.
             </p>
-          </header>
-
-          <h2 class="section-head"><span class="label">Start</span></h2>
-          <div class="start-grid">
-            <button class="start-card" id="start-sample">
-              <span class="start-kicker">Have a look first</span>
-              <span class="start-title">Open the example yard</span>
-              <span class="start-body">
-                An invented 70 × 120 ft lot with a house, a drive, beds, a patio
-                and a shed. Nothing real is modelled. Good for seeing what the
-                auto-layout does before you draw anything.
-              </span>
-              <span class="start-go">Open<span aria-hidden="true"> →</span></span>
-            </button>
-
-            <div class="start-card start-card-form">
-              <span class="start-kicker">Know your dimensions</span>
-              <span class="start-title">Start from a blank lot</span>
-              <span class="start-body">Enter the lot size and draw the yard on top of it.</span>
-              <div class="field-row">
-                <label class="field">
-                  <span>Width</span>
-                  <input type="number" id="lot-w" min="15" max="800" step="1" value="70" />
-                </label>
-                <span class="times" aria-hidden="true">×</span>
-                <label class="field">
-                  <span>Depth</span>
-                  <input type="number" id="lot-d" min="15" max="800" step="1" value="120" />
-                </label>
-                <label class="field">
-                  <span>Units</span>
-                  <select id="lot-units">
-                    <option value="us">feet</option>
-                    <option value="metric">metres</option>
-                  </select>
-                </label>
-              </div>
-              <button class="btn" id="start-blank">Create the lot</button>
-            </div>
-
-            <div class="start-card start-card-form">
-              <span class="start-kicker">Have a picture of it</span>
-              <span class="start-title">Trace your own image</span>
-              <span class="start-body">
-                A screenshot of a satellite view, a survey, a plot plan, a
-                sketch on graph paper. You set the scale by clicking two points
-                you know the distance between. The image is read straight off
-                your disk and never uploaded.
-              </span>
-              <label class="btn btn-file">
-                Choose an image
-                <input type="file" id="start-image" accept="image/*" hidden />
-              </label>
-            </div>
           </div>
+        </header>
 
-          <div class="resume-row" id="resume-row" hidden>
-            <p class="small">
+        <section class="exp-body">
+          <div class="container">
+            <p class="note resume-row" id="resume-row" hidden>
               You have a saved plan in this browser.
               <button class="linkish" id="start-resume">Pick it back up</button>
               ·
               <button class="linkish danger-text" id="start-discard">Discard it</button>
             </p>
-          </div>
 
-          <h2 class="section-head"><span class="label">How it works</span></h2>
-          <div class="bench">
-            <div class="bench-item">
-              <h3>1 · Size the nozzle to the shape</h3>
-              <p>
-                The tool measures the largest circle that fits inside each piece
-                of ground — the real "how wide is this" — rather than its area.
-                A 2,000 sq ft lawn and a 2,000 sq ft side strip want completely
-                different heads, and area alone cannot tell them apart. Wide
-                open ground gets gear rotors, ordinary lawns get rotary nozzles,
-                narrow strips get fixed sprays. Then the throw is stepped down
-                until at least three heads fit one zone's flow budget — on a
-                small meter you run more, smaller heads per valve, not one big
-                rotor at a time.
-              </p>
-            </div>
-            <div class="bench-item">
-              <h3>2 · Ring the edge, fill the middle</h3>
-              <p>
-                Heads go on the corners first, with the arc matched to the
-                interior angle and aimed down the bisector, then along the edges
-                as half circles facing in, then on a triangular lattice wherever
-                the perimeter ring cannot reach. Spacing is head-to-head: every
-                head throws far enough to hit its neighbour. That looks like
-                absurd overlap on paper and it is the entire trick — a single
-                head puts down most of its water close in, so anything less
-                leaves dry rings you cannot fix by turning the water up.
-              </p>
-            </div>
-            <div class="bench-item">
-              <h3>3 · Prune what earns nothing</h3>
-              <p>
-                The corner and edge passes double up, so a greedy pass tries
-                removing each head cheapest-first and keeps the removal only if
-                coverage holds and the head-to-head overlap barely moves. Set
-                cover is NP-hard; a yard does not deserve a branch-and-bound.
-                This typically drops a third of the placements.
-              </p>
-            </div>
-            <div class="bench-item">
-              <h3>4 · Pack zones under the flow budget</h3>
-              <p>
-                Your spigot is the constraint that decides everything. Heads are
-                walked in a nearest-neighbour chain from the water source and
-                packed into zones at 85 % of measured flow, so a zone is a
-                contiguous <em>place</em> in the yard rather than a scattering,
-                and no valve is sized at 100 % of a bucket test. The supply
-                fixes how many valves; the chain is then re-cut into that many
-                runs so the busiest zone draws as little as possible and no
-                head is stranded on a valve of its own.
-              </p>
-            </div>
-            <div class="bench-item">
-              <h3>5 · Trench as a spanning tree</h3>
-              <p>
-                Each zone gets a minimum spanning tree from its nearest source
-                out to every head, and every edge of it is a routed run:
-                straight where the line stays clear of every building, and
-                otherwise bent around the corners by the shortest path, so the
-                trench on the plan is a trench you can dig. Paving is a price
-                rather than a wall — a walk can be sleeved.
-              </p>
-            </div>
-            <div class="bench-item">
-              <h3>What it is not</h3>
-              <p>
-                Not a hydraulic design. Nozzle flow and throw are catalogue
-                approximations, friction loss in the pipe is not modelled, and
-                nothing here knows your local code, your backflow requirements
-                or where your utilities are buried. It is close enough to size
-                zones and argue with a parts list. It is not close enough to
-                skip a pressure gauge, a bucket, or a call before you dig.
-              </p>
+            <div class="panel-card setup-panel">
+              <div class="setup-copy">
+                <p class="eyebrow">Example · Blank lot · Your own image</p>
+                <h2 class="t-display">Start with a yard.</h2>
+                <p class="panel-lede">
+                  Open the example to see what the auto-layout does before you
+                  draw anything, or bring your own: the size of the lot, or a
+                  picture you can put a scale on.
+                </p>
+                <p class="privacy-note setup-privacy">
+                  <span class="lock-glyph" aria-hidden="true"></span>
+                  Nothing you draw or trace leaves this machine. There is no
+                  server: the plan lives in this browser's own storage, and an
+                  image is read straight off your disk and never uploaded.
+                </p>
+              </div>
+
+              <div class="setup-controls">
+                <div class="start-item">
+                  <div class="start-copy">
+                    <span class="start-title">Open the example yard</span>
+                    <span class="start-body">
+                      An invented 70 × 120 ft lot with a house, a drive, beds, a
+                      patio and a shed. Nothing real is modelled.
+                    </span>
+                  </div>
+                  <button class="btn btn-primary" id="start-sample">Open the example</button>
+                </div>
+
+                <div class="start-item">
+                  <div class="start-copy">
+                    <span class="start-title">Start from a blank lot</span>
+                    <span class="start-body">Enter the lot size and draw the yard on top of it.</span>
+                    <div class="field-row">
+                      <label class="field">
+                        <span>Width</span>
+                        <input type="number" id="lot-w" min="15" max="800" step="1" value="70" />
+                      </label>
+                      <span class="times" aria-hidden="true">×</span>
+                      <label class="field">
+                        <span>Depth</span>
+                        <input type="number" id="lot-d" min="15" max="800" step="1" value="120" />
+                      </label>
+                      <label class="field">
+                        <span>Units</span>
+                        <select id="lot-units">
+                          <option value="us">feet</option>
+                          <option value="metric">metres</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                  <button class="btn" id="start-blank">Create the lot</button>
+                </div>
+
+                <div class="start-item">
+                  <div class="start-copy">
+                    <span class="start-title">Trace your own image</span>
+                    <span class="start-body">
+                      A screenshot of a satellite view, a survey, a plot plan, a
+                      sketch on graph paper. You set the scale by clicking two
+                      points you know the distance between.
+                    </span>
+                  </div>
+                  <label class="btn btn-file">
+                    Choose an image
+                    <input type="file" id="start-image" accept="image/*" hidden />
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
+        </section>
 
-          <p class="colophon">
-            EXP-039 in <a href="https://ryankm.com/lab">the Lab at ryankm.com</a>.
-            Source on <a href="https://github.com/uxpreview/verbose-octo-journey">GitHub</a>.
-          </p>
-        </div>
+        <footer class="app-footer">
+          <div class="container">
+            <h2 class="t-display notes-title">Bench notes</h2>
+            <dl class="notes bench-notes">
+              <div class="note-row">
+                <dt class="label">Size the nozzle to the shape</dt>
+                <dd>
+                  The tool measures the largest circle that fits inside each piece
+                  of ground — the real "how wide is this" — rather than its area.
+                  A 2,000 sq ft lawn and a 2,000 sq ft side strip want completely
+                  different heads, and area alone cannot tell them apart. Wide
+                  open ground gets gear rotors, ordinary lawns get rotary nozzles,
+                  narrow strips get fixed sprays. Then the throw is stepped down
+                  until at least three heads fit one zone's flow budget — on a
+                  small meter you run more, smaller heads per valve, not one big
+                  rotor at a time.
+                </dd>
+              </div>
+              <div class="note-row">
+                <dt class="label">Ring the edge, fill the middle</dt>
+                <dd>
+                  Heads go on the corners first, with the arc matched to the
+                  interior angle and aimed down the bisector, then along the
+                  edges as half circles facing in, then on a triangular lattice
+                  wherever the perimeter ring cannot reach. Spacing is
+                  head-to-head: every head throws far enough to hit its
+                  neighbour. That looks like absurd overlap on paper and it is
+                  the entire trick — a single head puts down most of its water
+                  close in, so anything less leaves dry rings you cannot fix by
+                  turning the water up.
+                </dd>
+              </div>
+              <div class="note-row">
+                <dt class="label">Prune what earns nothing</dt>
+                <dd>
+                  The corner and edge passes double up, so a greedy pass tries
+                  removing each head cheapest-first and keeps the removal only if
+                  coverage holds and the head-to-head overlap barely moves. Set
+                  cover is NP-hard; a yard does not deserve a branch-and-bound.
+                  This typically drops a third of the placements.
+                </dd>
+              </div>
+              <div class="note-row">
+                <dt class="label">Pack zones under the flow budget</dt>
+                <dd>
+                  Your spigot is the constraint that decides everything. Heads are
+                  walked in a nearest-neighbour chain from the water source and
+                  packed into zones at 85 % of measured flow, so a zone is a
+                  contiguous <em>place</em> in the yard rather than a scattering,
+                  and no valve is sized at 100 % of a bucket test. The supply
+                  fixes how many valves; the chain is then re-cut into that many
+                  runs so the busiest zone draws as little as possible and no
+                  head is stranded on a valve of its own.
+                </dd>
+              </div>
+              <div class="note-row">
+                <dt class="label">Trench as a spanning tree</dt>
+                <dd>
+                  Each zone gets a minimum spanning tree from its nearest source
+                  out to every head, and every edge of it is a routed run:
+                  straight where the line stays clear of every building, and
+                  otherwise bent around the corners by the shortest path, so the
+                  trench on the plan is a trench you can dig. Paving is a price
+                  rather than a wall — a walk can be sleeved.
+                </dd>
+              </div>
+              <div class="note-row">
+                <dt class="label">What it is not</dt>
+                <dd>
+                  Not a hydraulic design. Nozzle flow and throw are catalogue
+                  approximations, friction loss in the pipe is not modelled, and
+                  nothing here knows your local code, your backflow requirements
+                  or where your utilities are buried. It is close enough to size
+                  zones and argue with a parts list. It is not close enough to
+                  skip a pressure gauge, a bucket, or a call before you dig.
+                </dd>
+              </div>
+              <div class="note-row">
+                <dt class="label">It stays on this machine</dt>
+                <dd>
+                  The plan is saved in this browser's own storage as you work and
+                  can be exported as JSON. A traced image is read with the
+                  browser's file reader and never uploaded. There is no server
+                  and no analytics, which is also why clearing site data deletes
+                  everything.
+                </dd>
+              </div>
+            </dl>
+            <p class="footer-credit">
+              <a class="arrow-link" href="https://ryankm.com/lab">EXP-039 in the Lab at ryankm.com<span aria-hidden="true">→</span></a>
+              <a class="arrow-link" href="https://github.com/uxpreview/verbose-octo-journey">Source on GitHub<span aria-hidden="true">→</span></a>
+            </p>
+          </div>
+        </footer>
       </section>
 
       <!-- ----------------------------------------------------- PLANNER --- -->
@@ -319,7 +360,7 @@
                 <button class="btn btn-accent" id="btn-auto">Generate the layout</button>
                 <button class="ghost" id="btn-clear-heads">Clear heads</button>
               </div>
-              <div class="notes" id="auto-notes"></div>
+              <div class="layout-notes" id="auto-notes"></div>
             </section>
 
             <section class="card" id="card-zones">
