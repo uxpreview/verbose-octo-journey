@@ -9,7 +9,7 @@
 import { sampleSite, blankSite, normalise, isObstacle, irrigableArea } from '../src/site.js';
 import { autoLayout, FLOW_SAFETY, MAX_HEADS_PER_ZONE, pickNozzle, packZones, trenchTree, inradius } from '../src/autolayout.js';
 import { headGpm, dripGpm, runTime, precipRate, bucketGpm, effectiveRadius, PR_CONSTANT } from '../src/hydraulics.js';
-import { buildCoverageGrid, polygonCoverage } from '../src/coverage.js';
+import { buildCoverageGrid, polygonCoverage, CoverageSampler } from '../src/coverage.js';
 import { pointInPoly, polyArea, rect, dist, inSector, sectorPoints, distToBoundary, segmentCrossesPoly } from '../src/geometry.js';
 
 let pass = 0, fail = 0;
@@ -275,6 +275,40 @@ test('a blank lot can be solved straight out of setup', () => {
   assert(out.heads.length > 3, `a 50x80 lawn should need more than ${out.heads.length} heads`);
   const cov = polygonCoverage(s.areas[0].pts, out.heads, s.supply.psi).pct;
   assert(cov >= 88, `only ${cov.toFixed(1)} % of a plain rectangle covered`);
+});
+
+test('the incremental sampler measures exactly what polygonCoverage measures', () => {
+  // The pruner optimises against the sampler; the notes and the tests read
+  // polygonCoverage. If the two ever disagree the solver is chasing a number
+  // nobody can see, so they are held to the same points and the same answer.
+  const lawn = site.areas.find((a) => a.type === 'lawn');
+  const blocks = site.areas.filter(isObstacle);
+  const heads = plan.heads.filter((h) => h.areaId === lawn.id);
+  assert(heads.length > 2, `${heads.length} heads on ${lawn.name}`);
+  const direct = polygonCoverage(lawn.pts, heads, site.supply.psi, blocks);
+  const sampler = new CoverageSampler(lawn.pts, blocks);
+  const cov = sampler.counter(heads, site.supply.psi);
+  assert(cov.stats.n === direct.n, `sampled ${cov.stats.n} points vs ${direct.n}`);
+  near(cov.stats.pct, direct.pct, 1e-9, 'single coverage');
+  near(cov.stats.pct2, direct.pct2, 1e-9, 'head-to-head');
+  // Removing and re-adding a head has to round-trip exactly.
+  cov.remove(heads[0]);
+  const fewer = polygonCoverage(lawn.pts, heads.slice(1), site.supply.psi, blocks);
+  near(cov.stats.pct, fewer.pct, 1e-9, 'after a removal');
+  cov.add(heads[0]);
+  near(cov.stats.pct2, direct.pct2, 1e-9, 'restored');
+});
+
+test('a 300 x 400 ft lot solves in well under a second (perf guard)', () => {
+  // This took more than 90 s before the pruner went incremental. The bound is
+  // loose on purpose: it is here to catch a return to per-candidate re-measuring,
+  // not to benchmark the machine.
+  const s = blankSite(300, 400);
+  const t0 = performance.now();
+  const out = autoLayout(s);
+  const ms = performance.now() - t0;
+  assert(out.heads.length > 40, `a 300x400 lawn needs more than ${out.heads.length} heads`);
+  assert(ms < 3000, `auto-layout took ${ms.toFixed(0)} ms`);
 });
 
 console.log(results.join('\n'));

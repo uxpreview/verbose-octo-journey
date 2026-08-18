@@ -10,7 +10,7 @@
 | **Landed** | [PR #6](https://github.com/uxpreview/verbose-octo-journey/pull/6) — **merged** |
 | **Deploys from** | `main` → `irrigation-planner-theta.vercel.app` |
 | **Intended host** | `irrigation.ryankm.com` — **assumed, not confirmed** (see §7.1) |
-| **Tests** | `npm test` — 34 passing on `main` |
+| **Tests** | `npm test` — 36 passing on `feat/solver-perf` (34 on `main`) |
 | **Handoff written** | 2026-08-18 |
 
 ---
@@ -236,28 +236,24 @@ project, point DNS, and decide whether the old `vercel.app` URL should redirect.
 
 ### Substance for the next PR
 
-**4. The solver has a performance wall.** Measured on a blank rectangular lot:
+**4. ~~The solver has a performance wall.~~ Done** (`feat/solver-perf`).
+`pruneHeads` now measures against a `CoverageSampler` — the polygon is sampled
+once and each trial removal touches only that head's footprint — and
+`trenchTree` is textbook O(n²) Prim instead of re-scoring every pair per step.
+`buildCoverageGrid` (the map wash) likewise loops per head over its own throw
+rather than per cell over every head. Output is byte-identical to before on the
+sample yard and on blank lots; two tests guard it (sampler ≡ `polygonCoverage`,
+and a 300 × 400 ft lot must solve in < 3 s).
 
-| Lot | Heads | Time |
-|---|---:|---:|
-| 70 × 120 ft | 10 | 247 ms |
-| 120 × 160 ft | 17 | 890 ms |
-| 200 × 260 ft | 42 | **9.9 s** |
-| 300 × 400 ft | — | **> 90 s (unusable)** |
+| Lot | Heads | Before | After |
+|---|---:|---:|---:|
+| 70 × 120 ft | 10 | 162 ms | 52 ms |
+| 200 × 260 ft | 42 | 8.7 s | 78 ms |
+| 300 × 400 ft | 94 | > 90 s | 180 ms |
+| 500 × 600 ft | 215 | — | 0.45 s |
 
-A typical residential lot is fine, so this is not urgent — but "applicable to
-anyone" includes people with an acre, and at 200 × 260 the browser tab is
-visibly frozen with no feedback.
-
-*Cause:* `pruneHeads` calls `polygonCoverage` over the whole polygon bounding box
-once per candidate removal, so it is O(heads² × area). `inradius` also samples
-the full bbox.
-
-*Fix:* keep a per-cell hit-count grid and decrement only the cells within the
-removed head's radius, instead of recomputing the whole polygon each time. That
-turns the inner loop from "area" into "one head's footprint". Add a perf guard
-test so it cannot regress. Consider a progress indicator or a Web Worker
-regardless, since the button is synchronous today.
+Still synchronous on the button; a Web Worker is no longer needed for any lot a
+homeowner has.
 
 **5. Zone packing leaves an orphan.** On the sample yard the packer produces:
 

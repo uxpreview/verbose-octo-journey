@@ -23,7 +23,7 @@ import {
 } from './geometry.js';
 import { HEAD_TYPES, headGpm, dripGpm, dripTubingFt, effectiveRadius } from './hydraulics.js';
 import { isIrrigable, isObstacle, newId, peekId } from './site.js';
-import { polygonCoverage } from './coverage.js';
+import { polygonCoverage, CoverageSampler } from './coverage.js';
 
 /** Fraction of the measured supply a single zone is allowed to draw. Sizing a
  *  zone at 100 % of a bucket test is how you get a zone that browns out the
@@ -174,22 +174,28 @@ export function placeHeads(poly, nozzle, { blocks = [], inset = 0.75 } = {}) {
  * a branch-and-bound — but it reliably removes the 20-30 % of placements that
  * the corner and edge passes double up on. */
 export function pruneHeads(poly, heads, { psi = 50, blocks = [], floor = MIN_COVERAGE_PCT, overlapLoss = MAX_OVERLAP_LOSS_PCT } = {}) {
-  if (heads.length < 2) return { heads, removed: 0 };
-  const base = polygonCoverage(poly, heads, psi, blocks);
-  const floorPct = Math.min(floor, base.pct ?? 0);
-  const floorPct2 = Math.max(0, (base.pct2 ?? 0) - overlapLoss);
-  let kept = [...heads];
+  if (heads.length < 2) {
+    const c = polygonCoverage(poly, heads, psi, blocks);
+    return { heads, removed: 0, coverage: { pct: c.pct, pct2: c.pct2 } };
+  }
+  // One sampling of the ground, then every trial removal costs one head's
+  // footprint rather than a re-measure of the whole polygon.
+  const sampler = new CoverageSampler(poly, blocks);
+  const cov = sampler.counter(heads, psi);
+  const floorPct = Math.min(floor, cov.stats.pct ?? 0);
+  const floorPct2 = Math.max(0, (cov.stats.pct2 ?? 0) - overlapLoss);
+  const kept = new Set(heads);
   // Cheapest first, so the pruner spends its budget on the heads that were
   // least useful to buy rather than on whichever one it happened to see first.
-  const order = [...kept].sort((a, b) => headGpm(a, psi) - headGpm(b, psi));
+  const order = [...heads].sort((a, b) => headGpm(a, psi) - headGpm(b, psi));
   let removed = 0;
   for (const h of order) {
-    if (kept.length <= 2) break;
-    const trial = kept.filter((x) => x !== h);
-    const c = polygonCoverage(poly, trial, psi, blocks);
-    if ((c.pct ?? 0) >= floorPct - 0.25 && (c.pct2 ?? 0) >= floorPct2) { kept = trial; removed++; }
+    if (kept.size <= 2) break;
+    cov.remove(h);
+    if ((cov.stats.pct ?? 0) >= floorPct - 0.25 && (cov.stats.pct2 ?? 0) >= floorPct2) { kept.delete(h); removed++; }
+    else cov.add(h);
   }
-  return { heads: kept, removed };
+  return { heads: heads.filter((h) => kept.has(h)), removed, coverage: { pct: cov.stats.pct, pct2: cov.stats.pct2 } };
 }
 
 /* --- 5. Zoning ---------------------------------------------------------- */
@@ -244,19 +250,29 @@ export function trenchTree(source, heads, { structures = [], paving = [] } = {})
     else if (paving.some((s) => segmentCrossesPoly(a, b, s.pts))) w *= 1.8;
     return w;
   };
-  const inTree = [0];
-  const out = new Set(nodes.map((_, i) => i).slice(1));
+  // Textbook Prim: every node outside the tree remembers its cheapest link
+  // into it, and each newly added node offers itself to the rest once. That is
+  // O(n²) weight evaluations in total, rather than re-scoring every
+  // tree × outside pair on every step.
+  const n = nodes.length;
+  const inTree = new Uint8Array(n);
+  const key = new Float64Array(n).fill(Infinity);
+  const parent = new Int32Array(n).fill(-1);
   const edges = [];
-  while (out.size) {
-    let best = null;
-    for (const i of inTree) for (const j of out) {
-      const w = weight(nodes[i], nodes[j]);
-      if (!best || w < best.w) best = { i, j, w };
+  let cur = 0;
+  inTree[0] = 1;
+  for (let added = 1; added < n; added++) {
+    for (let j = 1; j < n; j++) {
+      if (inTree[j]) continue;
+      const w = weight(nodes[cur], nodes[j]);
+      if (w < key[j]) { key[j] = w; parent[j] = cur; }
     }
-    if (!best) break;
-    edges.push([best.i, best.j]);
-    inTree.push(best.j);
-    out.delete(best.j);
+    let best = -1;
+    for (let j = 1; j < n; j++) if (!inTree[j] && (best < 0 || key[j] < key[best])) best = j;
+    if (best < 0) break;
+    inTree[best] = 1;
+    edges.push([parent[best], best]);
+    cur = best;
   }
   const ref = (n) => (n.sourceId ? { x: n.x, y: n.y, sourceId: n.sourceId } : { x: n.x, y: n.y, headId: n.id });
   return edges.map(([i, j]) => [ref(nodes[i]), ref(nodes[j])]);
@@ -301,8 +317,7 @@ export function autoLayout(state, opts = {}) {
     const noz = pickNozzle(area.pts, { prefer, blocks, psi });
     const raw = placeHeads(area.pts, noz, { blocks });
     if (!raw.length) { notes.push(`${area.name}: too tight for a head at ${noz.radius} ft — left dry.`); continue; }
-    const { heads: kept, removed } = pruneHeads(area.pts, raw, { psi, blocks });
-    const cov = polygonCoverage(area.pts, kept, psi, blocks);
+    const { heads: kept, removed, coverage: cov } = pruneHeads(area.pts, raw, { psi, blocks });
     for (const h of kept) { h.areaId = area.id; h.areaName = area.name; }
     placed.push(...kept);
     notes.push(
