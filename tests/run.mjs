@@ -7,7 +7,7 @@
  * screen, so those are the claims under test. */
 
 import { sampleSite, blankSite, normalise, isObstacle, irrigableArea } from '../src/site.js';
-import { autoLayout, FLOW_SAFETY, MAX_HEADS_PER_ZONE, pickNozzle, packZones, balanceZones, trenchTree, TrenchRouter, inradius } from '../src/autolayout.js';
+import { autoLayout, FLOW_SAFETY, MAX_HEADS_PER_ZONE, MIN_HEADS_PER_ZONE, pickNozzle, packZones, balanceZones, trenchTree, TrenchRouter, inradius } from '../src/autolayout.js';
 import { headGpm, dripGpm, runTime, precipRate, bucketGpm, effectiveRadius, PR_CONSTANT } from '../src/hydraulics.js';
 import { buildCoverageGrid, polygonCoverage, CoverageSampler } from '../src/coverage.js';
 import { pointInPoly, polyArea, rect, dist, inSector, sectorPoints, distToBoundary, segmentCrossesPoly, offsetCorners } from '../src/geometry.js';
@@ -153,6 +153,35 @@ test('nozzle choice follows the shape', () => {
   assert(pickNozzle(rect(0, 0, 60, 8)).type === 'spray', 'a narrow strip gets sprays');
   assert(pickNozzle(rect(0, 0, 30, 26)).type === 'mp', 'a normal lawn gets rotary nozzles');
   assert(pickNozzle(rect(0, 0, 120, 120), { prefer: 'spray' }).type === 'spray', 'an explicit choice is respected');
+});
+
+test('pickNozzle steps the throw down until a few heads fit the zone budget', () => {
+  const big = rect(0, 0, 120, 120);
+  const open = pickNozzle(big, { psi: 50 });
+  assert(open.type === 'rotor' && open.radius === 35, `unbounded: ${open.type} at ${open.radius} ft`);
+  const tight = pickNozzle(big, { psi: 50, budget: 8.5 });
+  assert(tight.type === 'rotor', 'still a rotor — the family suits the ground');
+  assert(tight.radius < open.radius, `radius stepped down from ${open.radius} to ${tight.radius}`);
+  const perHead = headGpm({ type: tight.type, radius: tight.radius, arc: 360 }, 50);
+  assert(perHead * MIN_HEADS_PER_ZONE <= 8.5 + 1e-9, `${perHead.toFixed(2)} GPM x ${MIN_HEADS_PER_ZONE} exceeds 8.5`);
+  assert(tight.budgeted, 'reports that it fits');
+  const forced = pickNozzle(big, { psi: 50, budget: 8.5, prefer: 'rotor' });
+  assert(forced.type === 'rotor', 'a forced family stays forced');
+  const tiny = pickNozzle(big, { psi: 50, budget: 0.3 });
+  assert(!tiny.budgeted, 'nothing fits 0.3 GPM and it says so');
+  assert(headGpm({ type: tiny.type, radius: tiny.radius, arc: 360 }, 50) < 0.25, `falls back to the least thirsty head, got ${tiny.type} at ${tiny.radius} ft`);
+});
+
+test('a big blank lot on a small supply is not one rotor per valve', () => {
+  // Before nozzle sizing knew about the budget, a 200 x 260 ft lawn at 10 GPM
+  // came out as 27 zones because a 35 ft rotor draws more than half the budget.
+  const s = blankSite(200, 260);
+  const out = autoLayout(s);
+  const byZone = new Map();
+  for (const h of out.heads) byZone.set(h.zone, (byZone.get(h.zone) || 0) + 1);
+  const small = [...byZone.values()].filter((n) => n < MIN_HEADS_PER_ZONE).length;
+  assert(small <= 1, `${small} zones with fewer than ${MIN_HEADS_PER_ZONE} heads (sizes ${[...byZone.values()].join(',')})`);
+  assert(byZone.size <= Math.ceil(out.heads.length / 2), `${byZone.size} zones for ${out.heads.length} heads`);
 });
 
 test('packZones never exceeds the budget it was given', () => {

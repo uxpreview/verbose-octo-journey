@@ -32,6 +32,11 @@ export const FLOW_SAFETY = 0.85;
 /** Practical ceiling per valve, regardless of flow. Past this a zone is hard to
  *  balance and hard to fault-find. */
 export const MAX_HEADS_PER_ZONE = 14;
+/** The fewest full-circle heads a zone should be able to carry. A nozzle that
+ *  can only run one or two at a time on this supply is the wrong nozzle for
+ *  this supply, however well it fits the ground: a designer with a small meter
+ *  runs more, smaller heads per valve rather than one big rotor at a time. */
+export const MIN_HEADS_PER_ZONE = 3;
 /** Coverage the pruner refuses to fall below when dropping a head. */
 export const MIN_COVERAGE_PCT = 95;
 /** How much head-to-head overlap the pruner may trade away, in percentage
@@ -64,8 +69,11 @@ export function inradius(poly, blocks = [], res = 1.5) {
 
 /** Pick a nozzle family and a throw for a piece of ground.
  *  `prefer` of 'auto' lets the shape decide; anything else forces the family
- *  and only the radius is fitted. */
-export function pickNozzle(poly, { prefer = 'auto', blocks = [], psi = 50 } = {}) {
+ *  and only the radius is fitted. `budget` is the per-zone flow: the throw is
+ *  stepped down until at least MIN_HEADS_PER_ZONE full-circle heads fit a
+ *  zone, and if the family cannot get there at its shortest throw the next
+ *  family down is tried (unless the family was forced). */
+export function pickNozzle(poly, { prefer = 'auto', blocks = [], psi = 50, budget = Infinity } = {}) {
   const inr = inradius(poly, blocks);
   const width = inr * 2;
   let type = prefer;
@@ -74,12 +82,31 @@ export function pickNozzle(poly, { prefer = 'auto', blocks = [], psi = 50 } = {}
     else if (width >= 16) type = 'mp';
     else type = 'spray';
   }
-  const t = HEAD_TYPES[type];
-  // Aim for a throw that spans the narrow direction in one or two hops, then
-  // clamp into what the family can actually do at this pressure.
-  const wanted = width >= 2 * t.max ? t.max : Math.max(t.min, width / 2);
-  const radius = Math.round(clamp(wanted, t.min, t.max) * 2) / 2;
-  return { type, radius, inradius: inr, psiRadius: effectiveRadius({ type, radius }, psi) };
+  const perHead = budget / MIN_HEADS_PER_ZONE;
+  const fit = (family) => {
+    const t = HEAD_TYPES[family];
+    // Aim for a throw that spans the narrow direction in one or two hops, then
+    // clamp into what the family can actually do at this pressure.
+    const wanted = width >= 2 * t.max ? t.max : Math.max(t.min, width / 2);
+    let radius = clamp(wanted, t.min, t.max);
+    // Then shrink until the supply can run a few of them at once. Flow goes as
+    // radius squared, so this converges fast; the loop is only for the clamp.
+    while (radius > t.min && headGpm({ type: family, radius, arc: 360 }, psi) > perHead) radius = Math.max(t.min, radius - 0.5);
+    const gpm = headGpm({ type: family, radius, arc: 360 }, psi);
+    return { type: family, radius: Math.round(radius * 2) / 2, fits: gpm <= perHead + 1e-9, gpm };
+  };
+  let pick = fit(type);
+  if (!pick.fits && prefer === 'auto') {
+    // Step down the family ladder until one fits; if none does, the smallest
+    // spray is the honest answer and the zone count says the rest.
+    for (const family of ['mp', 'spray']) {
+      if (family === type) continue;
+      const alt = fit(family);
+      if (alt.fits || alt.gpm < pick.gpm) pick = alt;
+      if (alt.fits) break;
+    }
+  }
+  return { type: pick.type, radius: pick.radius, inradius: inr, psiRadius: effectiveRadius({ type: pick.type, radius: pick.radius }, psi), budgeted: pick.fits };
 }
 
 /* --- 2. Placement ------------------------------------------------------- */
@@ -455,7 +482,8 @@ export function autoLayout(state, opts = {}) {
   const placed = [];
   for (const area of sprayed) {
     if (polyArea(area.pts) < 12) continue; // a strip this small is a watering can
-    const noz = pickNozzle(area.pts, { prefer, blocks, psi });
+    const noz = pickNozzle(area.pts, { prefer, blocks, psi, budget });
+    if (!noz.budgeted) notes.push(`${area.name}: even a ${noz.radius} ft ${HEAD_TYPES[noz.type].label.toLowerCase()} draws more than a third of a zone on this supply — expect small zones, or measure the flow again.`);
     const raw = placeHeads(area.pts, noz, { blocks });
     if (!raw.length) { notes.push(`${area.name}: too tight for a head at ${noz.radius} ft — left dry.`); continue; }
     const { heads: kept, removed, coverage: cov } = pruneHeads(area.pts, raw, { psi, blocks });
