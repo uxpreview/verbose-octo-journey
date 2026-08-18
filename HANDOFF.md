@@ -10,7 +10,7 @@
 | **Landed** | [PR #6](https://github.com/uxpreview/verbose-octo-journey/pull/6) — **merged** |
 | **Deploys from** | `main` → `irrigation-planner-theta.vercel.app` |
 | **Intended host** | `irrigation.ryankm.com` — **assumed, not confirmed** (see §7.1) |
-| **Tests** | `npm test` — 34 passing on `main` |
+| **Tests** | `npm test` — 34 on `main`; each feature branch adds its own (see §7) |
 | **Handoff written** | 2026-08-18 |
 
 ---
@@ -121,11 +121,15 @@ every change, exportable as JSON. Shape is defined by `defaultState()` in
 `src/autolayout.js`, five stages. This is the heart of the project — the thing
 that makes it a lab rather than a drawing program.
 
-1. **Size the nozzle to the shape** (`pickNozzle`) — measures the largest circle
-   that fits inside each area, sampled, rather than its area. A 2,000 sq ft lawn
-   and a 2,000 sq ft side strip want completely different heads and area alone
-   cannot tell them apart. Wide open ground → gear rotors; ordinary lawns →
-   rotary nozzles; narrow strips → fixed sprays.
+1. **Size the nozzle to the shape, then to the supply** (`pickNozzle`) —
+   measures the largest circle that fits inside each area, sampled, rather than
+   its area. A 2,000 sq ft lawn and a 2,000 sq ft side strip want completely
+   different heads and area alone cannot tell them apart. Wide open ground →
+   gear rotors; ordinary lawns → rotary nozzles; narrow strips → fixed sprays.
+   Then the throw is stepped down until `MIN_HEADS_PER_ZONE` (3) full-circle
+   heads fit the zone budget, stepping the family down if the shortest throw
+   still cannot; `budgeted: false` on the result means nothing fits and the
+   notes say so.
 2. **Ring the edge, fill the middle** (`placeHeads`) — corners take the interior
    angle as their arc and the inward bisector as their aim, computed by
    construction and then verified against the polygon so reflex corners on an
@@ -133,11 +137,14 @@ that makes it a lab rather than a drawing program.
    gets a triangular lattice wherever the perimeter ring cannot reach.
 3. **Prune what earns nothing** (`pruneHeads`) — greedy, cheapest-first, keeping
    a removal only if coverage holds **and** head-to-head overlap barely moves.
-4. **Pack zones under the flow budget** (`chainByProximity`, `packZones`) — heads
-   walked in a nearest-neighbour chain from the source, packed greedily at 85 %
-   of measured flow, so a zone is a contiguous *place* in the yard.
-5. **Trench as a spanning tree** (`trenchTree`) — Prim's MST per zone, edge
-   weights multiplied where a run would cross a building (×8) or paving (×1.8).
+4. **Pack zones under the flow budget** (`chainByProximity`, `packZones`,
+   `balanceZones`, `zoneHeads`) — heads walked in a nearest-neighbour chain from
+   each source; the greedy pack fixes the valve count at 85 % of measured flow,
+   then a linear-partition DP re-cuts the chain into that many contiguous runs
+   with the lowest peak flow. Chain from whichever source needs fewest valves.
+5. **Trench as a spanning tree** (`TrenchRouter`, `trenchTree`) — Prim's MST per
+   zone over *routed* edges: straight when clear of every building, else the
+   shortest path round the offset corners; paving priced ×1.8, never a wall.
 
 Beds run on drip rather than throw, with flow from bed area.
 
@@ -236,73 +243,89 @@ project, point DNS, and decide whether the old `vercel.app` URL should redirect.
 
 ### Substance for the next PR
 
-**4. The solver has a performance wall.** Measured on a blank rectangular lot:
+**4. ~~The solver has a performance wall.~~ Done** (`feat/solver-perf`).
+`pruneHeads` now measures against a `CoverageSampler` — the polygon is sampled
+once and each trial removal touches only that head's footprint — and
+`trenchTree` is textbook O(n²) Prim instead of re-scoring every pair per step.
+`buildCoverageGrid` (the map wash) likewise loops per head over its own throw
+rather than per cell over every head. Output is byte-identical to before on the
+sample yard and on blank lots; two tests guard it (sampler ≡ `polygonCoverage`,
+and a 300 × 400 ft lot must solve in < 3 s).
 
-| Lot | Heads | Time |
-|---|---:|---:|
-| 70 × 120 ft | 10 | 247 ms |
-| 120 × 160 ft | 17 | 890 ms |
-| 200 × 260 ft | 42 | **9.9 s** |
-| 300 × 400 ft | — | **> 90 s (unusable)** |
+| Lot | Heads | Before | After |
+|---|---:|---:|---:|
+| 70 × 120 ft | 10 | 162 ms | 52 ms |
+| 200 × 260 ft | 42 | 8.7 s | 78 ms |
+| 300 × 400 ft | 94 | > 90 s | 180 ms |
+| 500 × 600 ft | 215 | — | 0.45 s |
 
-A typical residential lot is fine, so this is not urgent — but "applicable to
-anyone" includes people with an acre, and at 200 × 260 the browser tab is
-visibly frozen with no feedback.
+Still synchronous on the button; a Web Worker is no longer needed for any lot a
+homeowner has.
 
-*Cause:* `pruneHeads` calls `polygonCoverage` over the whole polygon bounding box
-once per candidate removal, so it is O(heads² × area). `inradius` also samples
-the full bbox.
+**5. ~~Zone packing leaves an orphan.~~ Done** (`feat/zone-balance`).
+`balanceZones` keeps the greedy zone count (for a fixed chain, greedy is
+already optimal for the *number* of contiguous zones) and re-cuts the chain by
+DP to minimise the busiest zone; `zoneHeads` tries a chain from every source
+and keeps the one with fewest valves. Sample yard at 10 GPM: 14 / 14 / 11 / 1
+→ 14 / 12 / 14 in three valves instead of four. At 6 GPM: 14 / 12 / 8 / 5 / 1
+→ 14 / 5 / 5 / 7 / 9. Zone 1 stays at 14 tiny sprays because
+`MAX_HEADS_PER_ZONE` binds before flow does — that is the cap, not a bug.
+Tests: balancing never adds a valve, never leaves an orphan, respects the head
+cap; no spray zone on the sample yard has fewer than 3 heads.
 
-*Fix:* keep a per-cell hit-count grid and decrement only the cells within the
-removed head's radius, instead of recomputing the whole polygon each time. That
-turns the inner loop from "area" into "one head's footprint". Add a perf guard
-test so it cannot regress. Consider a progress indicator or a Web Worker
-regardless, since the button is synchronous today.
+**5b. Nozzle sizing ignores the flow budget.** Found while doing 5. On a blank
+120 × 160 ft lot at 10 GPM the solver picks 42 ft rotors at 4.3 GPM each, and
+two of them exceed the 8.5 GPM budget — so it packs *one rotor per zone* and a
+200 × 260 ft lawn comes out as 27 zones. `pickNozzle` sizes to shape only.
+*Fix:* pass the budget in and step the radius (or the family, rotor → MP) down
+until at least two or three heads fit a zone; a designer with a small meter
+would run rotary nozzles at a shorter throw, not one rotor at a time. Add a
+test that a big blank lot at 10 GPM needs no more than heads/2 zones.
 
-**5. Zone packing leaves an orphan.** On the sample yard the packer produces:
+**6. ~~Trenches penalise crossing buildings but do not route around them.~~
+Done** (`feat/trench-routing`, stacked on `feat/solver-perf`). Two things:
 
-| Zone | Heads | Flow |
-|---|---:|---:|
-| 1 | 14 | 2.39 GPM |
-| 2 | 14 | 6.20 GPM |
-| 3 | 11 | 7.46 GPM |
-| **4** | **1** | **1.32 GPM** |
-| 5 (drip) | 0 | 4.21 GPM |
+- `segmentCrossesPoly` counted a *touch* as a crossing. Both sample bibs sit
+  on the house wall, so every run out of a bib carried the ×8 penalty and the
+  tree learned nothing from it (4 of the 5 "crossings" on the sample yard were
+  this). It now means "enters the interior": proper edge crossings, else three
+  interior sample points, boundary read as outside.
+- `TrenchRouter` (`src/autolayout.js`): a visibility graph over every
+  building's offset corners (`offsetCorners` in `geometry.js`, margin 1.5 ft,
+  reflex-safe), Dijkstra per query, corner-to-corner visibility computed once.
+  `trenchTree` weights each edge by its routed cost and returns polylines with
+  the turns in; `autoLayout` writes them straight into `pipes[].pts` — the
+  renderer, the sheet's pipe totals and the reachability test already took
+  polylines. Paving stays a ×1.8 price, not a wall. Boxed-in pairs fall back
+  to a straight run at ×8, drawn honestly.
 
-Zone 4 is a single head on its own valve — real money for nothing. Zone 1 is
-also head-capped rather than flow-capped: 14 tiny spray heads drawing 2.39 GPM
-against an 8.5 GPM budget, because `MAX_HEADS_PER_ZONE` is 14.
+Sample yard: 0 runs under a building (was 1 real + 4 false), 610 ft of trench
+(was 586). Six new tests, including "no auto-laid trench goes under a
+building" on the sample plan.
 
-*Fix:* a balancing pass after `packZones` that merges a trailing under-filled
-zone into an adjacent zone with headroom, or replace the greedy sequential pack
-with first-fit-decreasing / capacitated clustering. Watch the existing tests —
-they assert no zone exceeds budget, so a merge must respect both the flow and
-head caps.
-
-**6. Trenches penalise crossing buildings but do not route around them.**
-`trenchTree` multiplies the edge weight for a run that crosses a structure, so
-the tree *prefers* a different topology — but the chosen edge is still drawn as
-a straight line, which can still pass through the house when no better topology
-exists. The drawn run is therefore not always diggable.
-
-*Fix:* insert waypoints — a visibility graph over obstacle corners, or a simple
-"route around the bounding box" pass on any edge flagged as crossing. This is
-the single change that would most improve the printed dig plan's credibility.
-
-**7. Traced images are stored at full resolution.** `openImage` in
-`src/main.js` does `readAsDataURL` and stores the result in state, which is then
-`JSON.stringify`-ed into `localStorage`. A phone photo will blow the ~5 MB quota.
-It currently fails *gracefully* — `save()` returns false and the panel says so,
-pointing at Export — but the plan silently stops persisting from then on.
-
-*Fix:* downscale to ~2000 px on the long edge through a canvas before making the
-data URL. Small change, removes a whole class of confusing behaviour.
+**7. ~~Traced images are stored at full resolution.~~ Done**
+(`feat/image-downscale`). `shrinkImage` in `src/main.js` runs between the
+`FileReader` and the scale dialog: anything over 2000 px on the long edge, or
+over ~1.5 MB as a data URL, is redrawn through a canvas and re-encoded as JPEG
+at 0.85 on a white ground (a transparent sketch would otherwise come out
+black). Small images pass through untouched so a crisp little plan drawing
+keeps its pixels. Checked in Chromium: a 4000 × 3000 PNG lands in state as a
+2000 × 1500 JPEG of ~450 KB and the plan keeps saving; an 800 × 600 PNG is
+stored as the PNG it was. Still no network call — the canvas never leaves the
+page.
 
 ### Polish
 
-**8. There is no CI.** No `.github/` at all, so `npm test` runs only locally. A
-GitHub Action running `npm test` on PRs is about ten lines and the tests are
-fast and dependency-free.
+**8. ~~There is no CI.~~ Done** (`chore/ci`): `.github/workflows/test.yml`
+runs `npm test` on pushes to `main` and on every pull request. Node 22, no
+install step.
+
+**8b. ~~Nozzle sizing ignores the flow budget~~ Done** (`feat/nozzle-budget`;
+found while doing 5, recorded there as 5b on that branch). `pickNozzle` takes
+`budget` and steps the throw down until `MIN_HEADS_PER_ZONE` full-circle heads
+fit a zone, then the family. Blank 120 × 160 ft at 10 GPM: 8 zones → 6, all
+with ≥ 3 heads; 200 × 260 ft: 27 zones → 17. Sample yard unchanged (its
+nozzles already fit). Two tests.
 
 **9. The map is pointer-only.** The SVG has `tabindex="0"` but there is no
 keyboard path to select a head, nudge one, or reshape an area — only `[`/`]` for

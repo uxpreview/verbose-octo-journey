@@ -7,10 +7,10 @@
  * screen, so those are the claims under test. */
 
 import { sampleSite, blankSite, normalise, isObstacle, irrigableArea } from '../src/site.js';
-import { autoLayout, FLOW_SAFETY, MAX_HEADS_PER_ZONE, pickNozzle, packZones, trenchTree, inradius } from '../src/autolayout.js';
+import { autoLayout, FLOW_SAFETY, MAX_HEADS_PER_ZONE, MIN_HEADS_PER_ZONE, pickNozzle, packZones, balanceZones, trenchTree, TrenchRouter, inradius } from '../src/autolayout.js';
 import { headGpm, dripGpm, runTime, precipRate, bucketGpm, effectiveRadius, PR_CONSTANT } from '../src/hydraulics.js';
-import { buildCoverageGrid, polygonCoverage } from '../src/coverage.js';
-import { pointInPoly, polyArea, rect, dist, inSector, sectorPoints, distToBoundary, segmentCrossesPoly } from '../src/geometry.js';
+import { buildCoverageGrid, polygonCoverage, CoverageSampler } from '../src/coverage.js';
+import { pointInPoly, polyArea, rect, dist, inSector, sectorPoints, distToBoundary, segmentCrossesPoly, offsetCorners } from '../src/geometry.js';
 
 let pass = 0, fail = 0;
 const results = [];
@@ -155,6 +155,35 @@ test('nozzle choice follows the shape', () => {
   assert(pickNozzle(rect(0, 0, 120, 120), { prefer: 'spray' }).type === 'spray', 'an explicit choice is respected');
 });
 
+test('pickNozzle steps the throw down until a few heads fit the zone budget', () => {
+  const big = rect(0, 0, 120, 120);
+  const open = pickNozzle(big, { psi: 50 });
+  assert(open.type === 'rotor' && open.radius === 35, `unbounded: ${open.type} at ${open.radius} ft`);
+  const tight = pickNozzle(big, { psi: 50, budget: 8.5 });
+  assert(tight.type === 'rotor', 'still a rotor — the family suits the ground');
+  assert(tight.radius < open.radius, `radius stepped down from ${open.radius} to ${tight.radius}`);
+  const perHead = headGpm({ type: tight.type, radius: tight.radius, arc: 360 }, 50);
+  assert(perHead * MIN_HEADS_PER_ZONE <= 8.5 + 1e-9, `${perHead.toFixed(2)} GPM x ${MIN_HEADS_PER_ZONE} exceeds 8.5`);
+  assert(tight.budgeted, 'reports that it fits');
+  const forced = pickNozzle(big, { psi: 50, budget: 8.5, prefer: 'rotor' });
+  assert(forced.type === 'rotor', 'a forced family stays forced');
+  const tiny = pickNozzle(big, { psi: 50, budget: 0.3 });
+  assert(!tiny.budgeted, 'nothing fits 0.3 GPM and it says so');
+  assert(headGpm({ type: tiny.type, radius: tiny.radius, arc: 360 }, 50) < 0.25, `falls back to the least thirsty head, got ${tiny.type} at ${tiny.radius} ft`);
+});
+
+test('a big blank lot on a small supply is not one rotor per valve', () => {
+  // Before nozzle sizing knew about the budget, a 200 x 260 ft lawn at 10 GPM
+  // came out as 27 zones because a 35 ft rotor draws more than half the budget.
+  const s = blankSite(200, 260);
+  const out = autoLayout(s);
+  const byZone = new Map();
+  for (const h of out.heads) byZone.set(h.zone, (byZone.get(h.zone) || 0) + 1);
+  const small = [...byZone.values()].filter((n) => n < MIN_HEADS_PER_ZONE).length;
+  assert(small <= 1, `${small} zones with fewer than ${MIN_HEADS_PER_ZONE} heads (sizes ${[...byZone.values()].join(',')})`);
+  assert(byZone.size <= Math.ceil(out.heads.length / 2), `${byZone.size} zones for ${out.heads.length} heads`);
+});
+
 test('packZones never exceeds the budget it was given', () => {
   const items = Array.from({ length: 30 }, (_, i) => ({ i, gpm: 1 + (i % 4) * 0.5 }));
   const zones = packZones(items, (it) => it.gpm, 5);
@@ -165,21 +194,80 @@ test('packZones never exceeds the budget it was given', () => {
   assert(zones.flat().length === 30, 'nothing dropped');
 });
 
+test('balanceZones keeps the zone count and evens out the remainder', () => {
+  // Fourteen small heads and one bigger one: greedy fills a zone of 14 and
+  // strands the last head on its own valve. Balanced, the same two valves
+  // carry roughly half each.
+  const items = [...Array.from({ length: 14 }, (_, i) => ({ i, gpm: 1 })), { i: 14, gpm: 3 }];
+  const greedy = packZones(items, (it) => it.gpm, 20);
+  assert(greedy.length === 2 && greedy[1].length === 1, `greedy leaves an orphan: ${greedy.map((z) => z.length)}`);
+  const zones = balanceZones(items, (it) => it.gpm, 20);
+  assert(zones.length === greedy.length, `${zones.length} zones vs ${greedy.length} greedy — balancing must not add a valve`);
+  assert(zones.every((z) => z.length > 1), `still an orphan: ${zones.map((z) => z.length)}`);
+  const flows = zones.map((z) => z.reduce((t, it) => t + it.gpm, 0));
+  assert(Math.max(...flows) <= 20 + 1e-9, 'under budget');
+  assert(Math.max(...flows) < 14, `peak ${Math.max(...flows)} should be well under greedy's 14`);
+  assert(zones.flat().map((it) => it.i).join() === items.map((it) => it.i).join(), 'contiguous and in chain order');
+  for (const z of zones) assert(z.length <= MAX_HEADS_PER_ZONE, 'head cap respected');
+});
+
+test('balanceZones respects the head cap when flow would not have split', () => {
+  const items = Array.from({ length: 20 }, (_, i) => ({ i, gpm: 0.1 }));
+  const zones = balanceZones(items, (it) => it.gpm, 100, 14);
+  assert(zones.length === 2, `${zones.length} zones`);
+  assert(zones.every((z) => z.length <= 14 && z.length >= 6), `sizes ${zones.map((z) => z.length)}`);
+});
+
 test('the trench tree reaches every head exactly once', () => {
   const heads = Array.from({ length: 9 }, (_, i) => ({ id: i + 1, x: (i % 3) * 10, y: Math.floor(i / 3) * 10 }));
   const edges = trenchTree({ id: 's1', x: -5, y: -5 }, heads);
   assert(edges.length === heads.length, 'a spanning tree has one edge per node added');
-  const reached = new Set(edges.map(([, b]) => b.headId));
+  const reached = new Set(edges.map((e) => e[e.length - 1].headId));
   assert(reached.size === heads.length, 'every head is on the tree');
 });
 
-test('the trench prefers going around the house', () => {
+test('a trench that would go under the house is routed around it', () => {
   const house = { pts: rect(-3, 2, 3, 8) };
   const heads = [{ id: 1, x: 0, y: 10 }];
-  const [[, b]] = trenchTree({ id: 's1', x: 0, y: 0 }, heads, { structures: [house] });
-  assert(b.headId === 1, 'still connected'); // the penalty steers the tree, it never abandons a head
+  const [run] = trenchTree({ id: 's1', x: 0, y: 0 }, heads, { structures: [house] });
+  assert(run[run.length - 1].headId === 1, 'still connected');
+  assert(run.length > 2, `the run should bend around the house, got ${run.length} points`);
+  for (let i = 1; i < run.length; i++) assert(!segmentCrossesPoly(run[i - 1], run[i], house.pts), `leg ${i} goes under the house`);
+  let L = 0;
+  for (let i = 1; i < run.length; i++) L += dist(run[i - 1], run[i]);
   const direct = dist({ x: 0, y: 0 }, { x: 0, y: 10 });
-  assert(direct > 0, 'sanity');
+  assert(L > direct && L < direct * 2.5, `routed length ${L.toFixed(1)} vs ${direct} direct`);
+});
+
+test('a run that starts on the house wall and heads away is not "under the house"', () => {
+  // Hose bibs sit on the wall. The old test counted any touch as a crossing,
+  // which put an x8 penalty on every run out of the bib and taught the tree
+  // nothing.
+  const house = rect(10, 10, 20, 20);
+  assert(!segmentCrossesPoly({ x: 15, y: 20 }, { x: 15, y: 30 }, house), 'straight out from the back wall');
+  assert(!segmentCrossesPoly({ x: 15, y: 20 }, { x: 5, y: 22 }, house), 'out and along');
+  assert(!segmentCrossesPoly({ x: 10, y: 10 }, { x: 20, y: 5 }, house), 'from a corner, away');
+  assert(segmentCrossesPoly({ x: 20, y: 12 }, { x: 15, y: 5 }, house), 'clipping the corner from the wall is a crossing');
+  assert(segmentCrossesPoly({ x: 15, y: 20 }, { x: 15, y: 15 }, house), 'from the wall into the interior');
+});
+
+test('the router prices paving but does not treat it as a wall', () => {
+  const walk = { pts: rect(-1, 4, 1, 6) };
+  const r = new TrenchRouter([], [walk]);
+  const q = r.route({ x: 0, y: 0 }, { x: 0, y: 10 });
+  assert(q.pts.length === 2 && !q.routed, 'straight across the walk');
+  assert(q.cost > 10 && q.cost < 20, `priced up, got ${q.cost.toFixed(1)}`);
+});
+
+test('offset corners sit just outside the polygon, reflex corners included', () => {
+  const L = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 4 }, { x: 4, y: 4 }, { x: 4, y: 10 }, { x: 0, y: 10 }];
+  const cs = offsetCorners(L, 1.5);
+  assert(cs.length === 6, 'one per vertex');
+  for (const c of cs) {
+    assert(!pointInPoly(c, L), `corner ${c.x.toFixed(1)},${c.y.toFixed(1)} is inside`);
+    const d = distToBoundary(c, L);
+    assert(d > 1 && d < 3, `corner ${c.x.toFixed(1)},${c.y.toFixed(1)} is ${d.toFixed(2)} ft off the wall`);
+  }
 });
 
 /* --- end to end: a whole plan for the sample yard ----------------------- */
@@ -201,6 +289,16 @@ test('no zone exceeds the flow budget', () => {
   for (const d of plan.drip) byZone.set(d.zone, (byZone.get(d.zone) || 0) + d.gpm);
   const budget = site.supply.gpm * FLOW_SAFETY;
   for (const [z, gpm] of byZone) assert(gpm <= budget + 1e-6, `zone ${z} draws ${gpm.toFixed(2)} GPM against a ${budget.toFixed(2)} GPM budget`);
+});
+
+test('no spray zone is a single stranded head', () => {
+  // A valve, a wire run and a controller station for one head is real money
+  // for nothing. On the sample yard the greedy packer used to produce
+  // 14 / 14 / 11 / 1; balancing re-cuts the same chain so it cannot.
+  const byZone = new Map();
+  for (const h of plan.heads) byZone.set(h.zone, (byZone.get(h.zone) || 0) + 1);
+  assert(byZone.size >= 2, 'more than one zone to compare');
+  for (const [z, n] of byZone) assert(n >= 3, `zone ${z} has only ${n} head${n === 1 ? '' : 's'}`);
 });
 
 test('no zone has more heads than one valve should carry', () => {
@@ -249,6 +347,15 @@ test('the plan actually covers the lawn', () => {
   assert(grid.pct2 >= 45, `only ${grid.pct2.toFixed(1)} % has head-to-head overlap`);
 });
 
+test('no auto-laid trench goes under a building', () => {
+  const structures = site.areas.filter((a) => a.type === 'structure');
+  for (const pipe of plan.pipes) {
+    for (let i = 1; i < pipe.pts.length; i++) {
+      for (const st of structures) assert(!segmentCrossesPoly(pipe.pts[i - 1], pipe.pts[i], st.pts), `zone ${pipe.zone} run goes under ${st.name}`);
+    }
+  }
+});
+
 test('ids are unique across heads, pipes and drip', () => {
   const ids = [...plan.heads, ...plan.pipes, ...plan.drip].map((o) => o.id);
   assert(new Set(ids).size === ids.length, 'duplicate id issued');
@@ -275,6 +382,40 @@ test('a blank lot can be solved straight out of setup', () => {
   assert(out.heads.length > 3, `a 50x80 lawn should need more than ${out.heads.length} heads`);
   const cov = polygonCoverage(s.areas[0].pts, out.heads, s.supply.psi).pct;
   assert(cov >= 88, `only ${cov.toFixed(1)} % of a plain rectangle covered`);
+});
+
+test('the incremental sampler measures exactly what polygonCoverage measures', () => {
+  // The pruner optimises against the sampler; the notes and the tests read
+  // polygonCoverage. If the two ever disagree the solver is chasing a number
+  // nobody can see, so they are held to the same points and the same answer.
+  const lawn = site.areas.find((a) => a.type === 'lawn');
+  const blocks = site.areas.filter(isObstacle);
+  const heads = plan.heads.filter((h) => h.areaId === lawn.id);
+  assert(heads.length > 2, `${heads.length} heads on ${lawn.name}`);
+  const direct = polygonCoverage(lawn.pts, heads, site.supply.psi, blocks);
+  const sampler = new CoverageSampler(lawn.pts, blocks);
+  const cov = sampler.counter(heads, site.supply.psi);
+  assert(cov.stats.n === direct.n, `sampled ${cov.stats.n} points vs ${direct.n}`);
+  near(cov.stats.pct, direct.pct, 1e-9, 'single coverage');
+  near(cov.stats.pct2, direct.pct2, 1e-9, 'head-to-head');
+  // Removing and re-adding a head has to round-trip exactly.
+  cov.remove(heads[0]);
+  const fewer = polygonCoverage(lawn.pts, heads.slice(1), site.supply.psi, blocks);
+  near(cov.stats.pct, fewer.pct, 1e-9, 'after a removal');
+  cov.add(heads[0]);
+  near(cov.stats.pct2, direct.pct2, 1e-9, 'restored');
+});
+
+test('a 300 x 400 ft lot solves in well under a second (perf guard)', () => {
+  // This took more than 90 s before the pruner went incremental. The bound is
+  // loose on purpose: it is here to catch a return to per-candidate re-measuring,
+  // not to benchmark the machine.
+  const s = blankSite(300, 400);
+  const t0 = performance.now();
+  const out = autoLayout(s);
+  const ms = performance.now() - t0;
+  assert(out.heads.length > 40, `a 300x400 lawn needs more than ${out.heads.length} heads`);
+  assert(ms < 3000, `auto-layout took ${ms.toFixed(0)} ms`);
 });
 
 console.log(results.join('\n'));

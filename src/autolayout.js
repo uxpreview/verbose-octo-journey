@@ -19,11 +19,11 @@
 
 import {
   dist, clamp, deg, rad, pointInPoly, polyArea, centroid, bounds,
-  distToBoundary, nearestOnSegment, segmentCrossesPoly, aimVec,
+  distToBoundary, nearestOnSegment, segmentCrossesPoly, offsetCorners, aimVec,
 } from './geometry.js';
 import { HEAD_TYPES, headGpm, dripGpm, dripTubingFt, effectiveRadius } from './hydraulics.js';
 import { isIrrigable, isObstacle, newId, peekId } from './site.js';
-import { polygonCoverage } from './coverage.js';
+import { polygonCoverage, CoverageSampler } from './coverage.js';
 
 /** Fraction of the measured supply a single zone is allowed to draw. Sizing a
  *  zone at 100 % of a bucket test is how you get a zone that browns out the
@@ -32,6 +32,11 @@ export const FLOW_SAFETY = 0.85;
 /** Practical ceiling per valve, regardless of flow. Past this a zone is hard to
  *  balance and hard to fault-find. */
 export const MAX_HEADS_PER_ZONE = 14;
+/** The fewest full-circle heads a zone should be able to carry. A nozzle that
+ *  can only run one or two at a time on this supply is the wrong nozzle for
+ *  this supply, however well it fits the ground: a designer with a small meter
+ *  runs more, smaller heads per valve rather than one big rotor at a time. */
+export const MIN_HEADS_PER_ZONE = 3;
 /** Coverage the pruner refuses to fall below when dropping a head. */
 export const MIN_COVERAGE_PCT = 95;
 /** How much head-to-head overlap the pruner may trade away, in percentage
@@ -64,8 +69,11 @@ export function inradius(poly, blocks = [], res = 1.5) {
 
 /** Pick a nozzle family and a throw for a piece of ground.
  *  `prefer` of 'auto' lets the shape decide; anything else forces the family
- *  and only the radius is fitted. */
-export function pickNozzle(poly, { prefer = 'auto', blocks = [], psi = 50 } = {}) {
+ *  and only the radius is fitted. `budget` is the per-zone flow: the throw is
+ *  stepped down until at least MIN_HEADS_PER_ZONE full-circle heads fit a
+ *  zone, and if the family cannot get there at its shortest throw the next
+ *  family down is tried (unless the family was forced). */
+export function pickNozzle(poly, { prefer = 'auto', blocks = [], psi = 50, budget = Infinity } = {}) {
   const inr = inradius(poly, blocks);
   const width = inr * 2;
   let type = prefer;
@@ -74,12 +82,31 @@ export function pickNozzle(poly, { prefer = 'auto', blocks = [], psi = 50 } = {}
     else if (width >= 16) type = 'mp';
     else type = 'spray';
   }
-  const t = HEAD_TYPES[type];
-  // Aim for a throw that spans the narrow direction in one or two hops, then
-  // clamp into what the family can actually do at this pressure.
-  const wanted = width >= 2 * t.max ? t.max : Math.max(t.min, width / 2);
-  const radius = Math.round(clamp(wanted, t.min, t.max) * 2) / 2;
-  return { type, radius, inradius: inr, psiRadius: effectiveRadius({ type, radius }, psi) };
+  const perHead = budget / MIN_HEADS_PER_ZONE;
+  const fit = (family) => {
+    const t = HEAD_TYPES[family];
+    // Aim for a throw that spans the narrow direction in one or two hops, then
+    // clamp into what the family can actually do at this pressure.
+    const wanted = width >= 2 * t.max ? t.max : Math.max(t.min, width / 2);
+    let radius = clamp(wanted, t.min, t.max);
+    // Then shrink until the supply can run a few of them at once. Flow goes as
+    // radius squared, so this converges fast; the loop is only for the clamp.
+    while (radius > t.min && headGpm({ type: family, radius, arc: 360 }, psi) > perHead) radius = Math.max(t.min, radius - 0.5);
+    const gpm = headGpm({ type: family, radius, arc: 360 }, psi);
+    return { type: family, radius: Math.round(radius * 2) / 2, fits: gpm <= perHead + 1e-9, gpm };
+  };
+  let pick = fit(type);
+  if (!pick.fits && prefer === 'auto') {
+    // Step down the family ladder until one fits; if none does, the smallest
+    // spray is the honest answer and the zone count says the rest.
+    for (const family of ['mp', 'spray']) {
+      if (family === type) continue;
+      const alt = fit(family);
+      if (alt.fits || alt.gpm < pick.gpm) pick = alt;
+      if (alt.fits) break;
+    }
+  }
+  return { type: pick.type, radius: pick.radius, inradius: inr, psiRadius: effectiveRadius({ type: pick.type, radius: pick.radius }, psi), budgeted: pick.fits };
 }
 
 /* --- 2. Placement ------------------------------------------------------- */
@@ -174,22 +201,28 @@ export function placeHeads(poly, nozzle, { blocks = [], inset = 0.75 } = {}) {
  * a branch-and-bound — but it reliably removes the 20-30 % of placements that
  * the corner and edge passes double up on. */
 export function pruneHeads(poly, heads, { psi = 50, blocks = [], floor = MIN_COVERAGE_PCT, overlapLoss = MAX_OVERLAP_LOSS_PCT } = {}) {
-  if (heads.length < 2) return { heads, removed: 0 };
-  const base = polygonCoverage(poly, heads, psi, blocks);
-  const floorPct = Math.min(floor, base.pct ?? 0);
-  const floorPct2 = Math.max(0, (base.pct2 ?? 0) - overlapLoss);
-  let kept = [...heads];
+  if (heads.length < 2) {
+    const c = polygonCoverage(poly, heads, psi, blocks);
+    return { heads, removed: 0, coverage: { pct: c.pct, pct2: c.pct2 } };
+  }
+  // One sampling of the ground, then every trial removal costs one head's
+  // footprint rather than a re-measure of the whole polygon.
+  const sampler = new CoverageSampler(poly, blocks);
+  const cov = sampler.counter(heads, psi);
+  const floorPct = Math.min(floor, cov.stats.pct ?? 0);
+  const floorPct2 = Math.max(0, (cov.stats.pct2 ?? 0) - overlapLoss);
+  const kept = new Set(heads);
   // Cheapest first, so the pruner spends its budget on the heads that were
   // least useful to buy rather than on whichever one it happened to see first.
-  const order = [...kept].sort((a, b) => headGpm(a, psi) - headGpm(b, psi));
+  const order = [...heads].sort((a, b) => headGpm(a, psi) - headGpm(b, psi));
   let removed = 0;
   for (const h of order) {
-    if (kept.length <= 2) break;
-    const trial = kept.filter((x) => x !== h);
-    const c = polygonCoverage(poly, trial, psi, blocks);
-    if ((c.pct ?? 0) >= floorPct - 0.25 && (c.pct2 ?? 0) >= floorPct2) { kept = trial; removed++; }
+    if (kept.size <= 2) break;
+    cov.remove(h);
+    if ((cov.stats.pct ?? 0) >= floorPct - 0.25 && (cov.stats.pct2 ?? 0) >= floorPct2) { kept.delete(h); removed++; }
+    else cov.add(h);
   }
-  return { heads: kept, removed };
+  return { heads: heads.filter((h) => kept.has(h)), removed, coverage: { pct: cov.stats.pct, pct2: cov.stats.pct2 } };
 }
 
 /* --- 5. Zoning ---------------------------------------------------------- */
@@ -227,39 +260,190 @@ export function packZones(chain, gpmOf, budget, maxPerZone = MAX_HEADS_PER_ZONE)
   return zones;
 }
 
+/** Even out a packing without adding a valve.
+ *
+ * `packZones` is greedy and, for a fixed chain, greedy is optimal for the
+ * *number* of zones — but it fills each zone to the brim and leaves the
+ * remainder in the last one, so a 40-head yard comes out 14 / 14 / 11 / 1: a
+ * single head on its own valve, which is a real solenoid, a real wire run and
+ * a real controller station for nothing. This keeps the zone count and the
+ * chain order, and re-cuts the chain into that many contiguous runs so that
+ * the busiest zone draws as little as possible. It is the classic linear
+ * partition, solved exactly by dynamic programming — cheap at the size of a
+ * yard. The zone count itself is not negotiable here: it is whatever the flow
+ * budget and the head cap force. */
+export function balanceZones(chain, gpmOf, budget, maxPerZone = MAX_HEADS_PER_ZONE) {
+  const greedy = packZones(chain, gpmOf, budget, maxPerZone);
+  const K = greedy.length, n = chain.length;
+  if (K < 2 || n < 2) return greedy;
+  const g = chain.map(gpmOf);
+  const pre = [0];
+  for (const v of g) pre.push(pre[pre.length - 1] + v);
+  const sum = (j, i) => pre[i] - pre[j]; // flow of items j..i-1
+  // best[k][i]: least possible "busiest zone" for the first i items in k zones;
+  // cut[k][i]: where the last zone starts.
+  const INF = Infinity;
+  const best = Array.from({ length: K + 1 }, () => new Float64Array(n + 1).fill(INF));
+  const cut = Array.from({ length: K + 1 }, () => new Int32Array(n + 1).fill(-1));
+  best[0][0] = 0;
+  for (let k = 1; k <= K; k++) {
+    for (let i = 1; i <= n; i++) {
+      for (let j = Math.max(k - 1, i - maxPerZone); j < i; j++) {
+        if (best[k - 1][j] === INF) continue;
+        const v = Math.max(best[k - 1][j], sum(j, i));
+        if (v < best[k][i]) { best[k][i] = v; cut[k][i] = j; }
+      }
+    }
+  }
+  // Greedy already found a feasible K-way cut, so this cannot fail; if it ever
+  // does, the greedy answer is still a valid plan.
+  if (best[K][n] === INF || best[K][n] > budget + 1e-9) return greedy;
+  const zones = [];
+  for (let k = K, i = n; k > 0; k--) { const j = cut[k][i]; zones.unshift(chain.slice(j, i)); i = j; }
+  return zones;
+}
+
+/** Zone the heads: try a chain from every source, keep whichever needs the
+ *  fewest valves (then the lowest peak flow), and balance it. */
+export function zoneHeads(heads, sources, gpmOf, budget, maxPerZone = MAX_HEADS_PER_ZONE) {
+  let bestZones = null, bestPeak = Infinity;
+  const starts = sources.length ? sources : [{ x: 0, y: 0 }];
+  for (const start of starts) {
+    const zones = balanceZones(chainByProximity(heads, start), gpmOf, budget, maxPerZone);
+    const peak = Math.max(0, ...zones.map((z) => z.reduce((t, h) => t + gpmOf(h), 0)));
+    if (!bestZones || zones.length < bestZones.length || (zones.length === bestZones.length && peak < bestPeak)) {
+      bestZones = zones; bestPeak = peak;
+    }
+  }
+  return bestZones;
+}
+
 /* --- 7. Trenching ------------------------------------------------------- */
+
+/** How much longer a run is allowed to look when it crosses paving. A walk can
+ *  be sleeved or bored under; a driveway is a real job. It is a price, not a
+ *  wall — the router still crosses paving when going round would be absurd. */
+export const PAVING_FACTOR = 1.8;
+/** How far a routed trench turns clear of a building's corner, in feet. */
+export const CORNER_MARGIN = 1.5;
+
+/** Routes a trench between two points without going under a building.
+ *
+ * The straight line is used whenever it stays out of every structure. When it
+ * would go through one, the run is bent around it: the corners of every
+ * building, pushed out by a small margin, form a visibility graph, and the
+ * shortest path through it is the route. That is the standard answer to
+ * shortest-path-around-obstacles and at the size of a yard it is instant.
+ * Paving is not an obstacle here, only a price — see PAVING_FACTOR.
+ *
+ * Built once per trenching pass so the corner-to-corner visibility is
+ * computed once and shared by every query. */
+export class TrenchRouter {
+  constructor(structures = [], paving = [], margin = CORNER_MARGIN) {
+    this.structures = structures;
+    this.paving = paving;
+    // Corner nodes: every building's offset corners, dropping any that land
+    // inside another building (two touching structures) since a trench cannot
+    // turn there.
+    this.corners = [];
+    for (const st of structures) {
+      for (const c of offsetCorners(st.pts, margin)) {
+        if (structures.some((o) => pointInPoly(c, o.pts))) continue;
+        this.corners.push(c);
+      }
+    }
+    const n = this.corners.length;
+    this.cc = new Float64Array(n * n).fill(Infinity);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const w = this.leg(this.corners[i], this.corners[j]);
+        this.cc[i * n + j] = w; this.cc[j * n + i] = w;
+      }
+    }
+  }
+
+  blocked(a, b) { return this.structures.some((st) => segmentCrossesPoly(a, b, st.pts)); }
+
+  /** Cost of one straight leg, or Infinity if it goes under a building. */
+  leg(a, b) {
+    if (this.blocked(a, b)) return Infinity;
+    const L = dist(a, b);
+    return this.paving.some((pv) => segmentCrossesPoly(a, b, pv.pts)) ? L * PAVING_FACTOR : L;
+  }
+
+  /** @returns {{pts: Array<{x:number,y:number}>, cost: number, routed: boolean}} */
+  route(a, b) {
+    const direct = this.leg(a, b);
+    if (direct < Infinity) return { pts: [a, b], cost: direct, routed: false };
+    const n = this.corners.length;
+    if (!n) return { pts: [a, b], cost: dist(a, b) * 8, routed: false };
+    // Dijkstra over a, the corners, and b. Nodes 0..n-1 are corners, n is a,
+    // n+1 is b. Small enough that a plain array scan beats a heap.
+    const N = n + 2, A = n, B = n + 1;
+    const cost = new Float64Array(N).fill(Infinity);
+    const prev = new Int32Array(N).fill(-1);
+    const done = new Uint8Array(N);
+    const fromA = this.corners.map((c) => this.leg(a, c));
+    const toB = this.corners.map((c) => this.leg(c, b));
+    cost[A] = 0;
+    for (;;) {
+      let u = -1;
+      for (let i = 0; i < N; i++) if (!done[i] && cost[i] < Infinity && (u < 0 || cost[i] < cost[u])) u = i;
+      if (u < 0 || u === B) break;
+      done[u] = 1;
+      const relax = (v, w) => { if (w < Infinity && cost[u] + w < cost[v]) { cost[v] = cost[u] + w; prev[v] = u; } };
+      if (u === A) { for (let j = 0; j < n; j++) relax(j, fromA[j]); }
+      else { for (let j = 0; j < n; j++) relax(j, this.cc[u * n + j]); relax(B, toB[u]); }
+    }
+    if (cost[B] === Infinity) {
+      // Boxed in — a source inside a courtyard, say. Draw it straight and
+      // price it as the tunnelling job it would be, so the tree avoids it if
+      // it possibly can.
+      return { pts: [a, b], cost: dist(a, b) * 8, routed: false };
+    }
+    const pts = [b];
+    for (let v = prev[B]; v !== A && v >= 0; v = prev[v]) pts.unshift(this.corners[v]);
+    pts.unshift(a);
+    return { pts, cost: cost[B], routed: true };
+  }
+}
 
 /** Prim's minimum spanning tree from the source out to every head in the zone.
  *
- * The edge weight is length times a penalty for what the trench would have to
- * cross, so the tree routes around the house rather than proposing that you
- * tunnel under a foundation. It is a preference, not a guarantee: on a plan
- * where the only path is through, the penalty is paid and the run is drawn
- * honestly rather than hidden. */
-export function trenchTree(source, heads, { structures = [], paving = [] } = {}) {
+ * Every edge is a routed trench, so its weight is the length you would
+ * actually dig — round the house, priced up across paving — and the tree
+ * chooses its topology on that basis. The result is a list of polylines, each
+ * from a node in the tree to a new node, with the corner turns included. */
+export function trenchTree(source, heads, { structures = [], paving = [], router } = {}) {
   const nodes = [{ x: source.x, y: source.y, sourceId: source.id }, ...heads];
-  const weight = (a, b) => {
-    let w = dist(a, b);
-    if (structures.some((s) => segmentCrossesPoly(a, b, s.pts))) w *= 8;
-    else if (paving.some((s) => segmentCrossesPoly(a, b, s.pts))) w *= 1.8;
-    return w;
-  };
-  const inTree = [0];
-  const out = new Set(nodes.map((_, i) => i).slice(1));
+  const R = router ?? new TrenchRouter(structures, paving);
+  // Textbook Prim: every node outside the tree remembers its cheapest link
+  // into it, and each newly added node offers itself to the rest once. That is
+  // O(n²) route evaluations in total, rather than re-scoring every
+  // tree × outside pair on every step.
+  const n = nodes.length;
+  const inTree = new Uint8Array(n);
+  const key = new Float64Array(n).fill(Infinity);
+  const parent = new Int32Array(n).fill(-1);
+  const via = new Array(n).fill(null);
   const edges = [];
-  while (out.size) {
-    let best = null;
-    for (const i of inTree) for (const j of out) {
-      const w = weight(nodes[i], nodes[j]);
-      if (!best || w < best.w) best = { i, j, w };
+  let cur = 0;
+  inTree[0] = 1;
+  for (let added = 1; added < n; added++) {
+    for (let j = 1; j < n; j++) {
+      if (inTree[j]) continue;
+      const r = R.route(nodes[cur], nodes[j]);
+      if (r.cost < key[j]) { key[j] = r.cost; parent[j] = cur; via[j] = r.pts; }
     }
-    if (!best) break;
-    edges.push([best.i, best.j]);
-    inTree.push(best.j);
-    out.delete(best.j);
+    let best = -1;
+    for (let j = 1; j < n; j++) if (!inTree[j] && (best < 0 || key[j] < key[best])) best = j;
+    if (best < 0) break;
+    inTree[best] = 1;
+    edges.push([parent[best], best, via[best]]);
+    cur = best;
   }
   const ref = (n) => (n.sourceId ? { x: n.x, y: n.y, sourceId: n.sourceId } : { x: n.x, y: n.y, headId: n.id });
-  return edges.map(([i, j]) => [ref(nodes[i]), ref(nodes[j])]);
+  return edges.map(([i, j, pts]) => [ref(nodes[i]), ...pts.slice(1, -1).map((p) => ({ x: p.x, y: p.y })), ref(nodes[j])]);
 }
 
 /* --- The whole thing ---------------------------------------------------- */
@@ -298,11 +482,11 @@ export function autoLayout(state, opts = {}) {
   const placed = [];
   for (const area of sprayed) {
     if (polyArea(area.pts) < 12) continue; // a strip this small is a watering can
-    const noz = pickNozzle(area.pts, { prefer, blocks, psi });
+    const noz = pickNozzle(area.pts, { prefer, blocks, psi, budget });
+    if (!noz.budgeted) notes.push(`${area.name}: even a ${noz.radius} ft ${HEAD_TYPES[noz.type].label.toLowerCase()} draws more than a third of a zone on this supply — expect small zones, or measure the flow again.`);
     const raw = placeHeads(area.pts, noz, { blocks });
     if (!raw.length) { notes.push(`${area.name}: too tight for a head at ${noz.radius} ft — left dry.`); continue; }
-    const { heads: kept, removed } = pruneHeads(area.pts, raw, { psi, blocks });
-    const cov = polygonCoverage(area.pts, kept, psi, blocks);
+    const { heads: kept, removed, coverage: cov } = pruneHeads(area.pts, raw, { psi, blocks });
     for (const h of kept) { h.areaId = area.id; h.areaName = area.name; }
     placed.push(...kept);
     notes.push(
@@ -315,8 +499,7 @@ export function autoLayout(state, opts = {}) {
 
   // --- zones ---
   const primary = state.sources[0];
-  const chain = chainByProximity(placed, primary);
-  const groups = packZones(chain, (h) => headGpm(h, psi), budget);
+  const groups = zoneHeads(placed, state.sources, (h) => headGpm(h, psi), budget);
 
   const heads = [];
   groups.forEach((group, i) => {
@@ -344,11 +527,12 @@ export function autoLayout(state, opts = {}) {
   const pipes = [];
   const byZone = new Map();
   for (const h of heads) { if (!byZone.has(h.zone)) byZone.set(h.zone, []); byZone.get(h.zone).push(h); }
+  const router = new TrenchRouter(structures, paving);
   for (const [zone, group] of byZone) {
     const c = centroid(group);
     const src = state.sources.reduce((best, s) => (dist(s, c) < dist(best, c) ? s : best), state.sources[0]);
-    for (const [a, b] of trenchTree(src, group, { structures, paving })) {
-      pipes.push({ id: newId(), zone, pts: [a, b] });
+    for (const pts of trenchTree(src, group, { router })) {
+      pipes.push({ id: newId(), zone, pts });
     }
   }
   // Drip zones get the same treatment: one tree per zone reaching each bed's
@@ -363,8 +547,9 @@ export function autoLayout(state, opts = {}) {
   for (const [zone, group] of dripByZone) {
     const c = centroid(group);
     const src = state.sources.reduce((best, s) => (dist(s, c) < dist(best, c) ? s : best), state.sources[0]);
-    for (const [a, b] of trenchTree(src, group, { structures, paving })) {
-      pipes.push({ id: newId(), zone, pts: [{ x: a.x, y: a.y, sourceId: a.sourceId }, { x: b.x, y: b.y }], drip: true });
+    for (const pts of trenchTree(src, group, { router })) {
+      const last = pts.length - 1;
+      pipes.push({ id: newId(), zone, pts: pts.map((p, i) => (i === last ? { x: p.x, y: p.y } : p)), drip: true });
     }
   }
 

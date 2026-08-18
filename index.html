@@ -150,7 +150,10 @@
                 A 2,000 sq ft lawn and a 2,000 sq ft side strip want completely
                 different heads, and area alone cannot tell them apart. Wide
                 open ground gets gear rotors, ordinary lawns get rotary nozzles,
-                narrow strips get fixed sprays.
+                narrow strips get fixed sprays. Then the throw is stepped down
+                until at least three heads fit one zone's flow budget — on a
+                small meter you run more, smaller heads per valve, not one big
+                rotor at a time.
               </p>
             </div>
             <div class="bench-item">
@@ -181,19 +184,23 @@
               <p>
                 Your spigot is the constraint that decides everything. Heads are
                 walked in a nearest-neighbour chain from the water source and
-                packed greedily into zones at 85 % of measured flow, so a zone
-                is a contiguous <em>place</em> in the yard rather than a
-                scattering, and no valve is sized at 100 % of a bucket test.
+                packed into zones at 85 % of measured flow, so a zone is a
+                contiguous <em>place</em> in the yard rather than a scattering,
+                and no valve is sized at 100 % of a bucket test. The supply
+                fixes how many valves; the chain is then re-cut into that many
+                runs so the busiest zone draws as little as possible and no
+                head is stranded on a valve of its own.
               </p>
             </div>
             <div class="bench-item">
               <h3>5 · Trench as a spanning tree</h3>
               <p>
                 Each zone gets a minimum spanning tree from its nearest source
-                out to every head, with edge weights multiplied where the run
-                would cross a building or paving. It is a preference, not a
-                guarantee: where the only path is through, the penalty is paid
-                and the run is drawn honestly rather than hidden.
+                out to every head, and every edge of it is a routed run:
+                straight where the line stays clear of every building, and
+                otherwise bent around the corners by the shortest path, so the
+                trench on the plan is a trench you can dig. Paving is a price
+                rather than a wall — a walk can be sleeved.
               </p>
             </div>
             <div class="bench-item">

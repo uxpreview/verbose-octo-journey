@@ -47,12 +47,15 @@ Any static host will serve the directory as-is.
 The interesting part is not the drawing program, it is that the plan is
 *computed*. Given the polygons, the sources and the supply:
 
-1. **Size the nozzle to the shape.** Each piece of ground is measured by the
-   largest circle that fits inside it, sampled — the real "how wide is this"
-   — rather than by its area. A 2,000 sq ft lawn and a 2,000 sq ft side strip
-   want completely different heads and area alone cannot tell them apart. Wide
-   open ground gets gear rotors, ordinary lawns get rotary nozzles, narrow
-   strips get fixed sprays. (`pickNozzle`)
+1. **Size the nozzle to the shape — and to the supply.** Each piece of ground
+   is measured by the largest circle that fits inside it, sampled — the real
+   "how wide is this" — rather than by its area. A 2,000 sq ft lawn and a
+   2,000 sq ft side strip want completely different heads and area alone
+   cannot tell them apart. Wide open ground gets gear rotors, ordinary lawns
+   get rotary nozzles, narrow strips get fixed sprays. Then the throw is
+   stepped down until at least three full-circle heads fit one zone's flow
+   budget: on a small meter a designer runs more, smaller heads per valve, not
+   one big rotor at a time. (`pickNozzle`)
 2. **Ring the edge, fill the middle.** Corners first, with the arc matched to
    the interior angle and aimed down the inward bisector — computed by
    construction and then verified against the polygon, so reflex corners on an
@@ -65,14 +68,20 @@ The interesting part is not the drawing program, it is that the plan is
    and a yard does not deserve a branch-and-bound. This drops roughly a third of
    the placements. (`pruneHeads`)
 4. **Pack zones under the flow budget.** Heads are walked in a nearest-neighbour
-   chain from the water source and packed greedily at 85 % of measured flow, so
-   a zone is a contiguous *place* in the yard rather than a scattering, and no
-   valve is sized at 100 % of a bucket test. (`chainByProximity`, `packZones`)
-5. **Trench as a spanning tree.** Prim's MST per zone from its nearest source,
-   with edge weights multiplied where the run would cross a building (×8) or
-   paving (×1.8), so it routes around the house. A preference, not a guarantee:
-   where the only path is through, the penalty is paid and the run is drawn
-   honestly rather than hidden. (`trenchTree`)
+   chain from the water source and packed at 85 % of measured flow, so a zone
+   is a contiguous *place* in the yard rather than a scattering, and no valve
+   is sized at 100 % of a bucket test. The greedy pass fixes how many valves
+   the supply forces; the chain is then re-cut into that many runs so the
+   busiest zone draws as little as possible — no lone head on a valve of its
+   own. (`chainByProximity`, `packZones`, `balanceZones`)
+5. **Trench as a spanning tree, routed around the buildings.** Prim's MST per
+   zone from its nearest source, where every edge is a *routed* run: straight
+   when the line stays clear of every structure, otherwise the shortest path
+   through a visibility graph over the buildings' offset corners, so the drawn
+   trench really does go round the house. Paving is a price rather than a wall
+   (×1.8) — a walk can be sleeved. Only if a point is boxed in on every side is
+   a straight run drawn and priced as the tunnelling job it would be.
+   (`TrenchRouter`, `trenchTree`)
 
 Beds are handled separately, as drip rather than throw: flow from bed area at
 0.6 GPH emitters on a 12 in grid, and a bed on a drip zone counts as covered

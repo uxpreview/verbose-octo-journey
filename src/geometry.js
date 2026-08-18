@@ -78,14 +78,57 @@ export function segmentsIntersect(a, b, c, d) {
   return o1 !== o2 && o3 !== o4;
 }
 
-/** Does the segment a→b cut through this polygon? Used to make pipe runs
- *  prefer going around the house rather than under it. */
+/** Does the segment a→b cut through this polygon? Used to keep pipe runs out
+ *  from under the house.
+ *
+ * "Through" means the run enters the interior. Touching does not count: a
+ * hose bib sits on the wall of the house, and a trench that starts there and
+ * heads away, or runs along the foundation, is not a trench under the
+ * foundation. So an edge crossing counts only when it is proper (both
+ * segments straddle each other strictly), and otherwise a few interior
+ * sample points decide, with points on the boundary itself read as outside. */
 export function segmentCrossesPoly(a, b, poly) {
   for (let i = 0; i < poly.length; i++) {
-    if (segmentsIntersect(a, b, poly[i], poly[(i + 1) % poly.length])) return true;
+    if (segmentsCrossProperly(a, b, poly[i], poly[(i + 1) % poly.length])) return true;
   }
-  return pointInPoly({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, poly);
+  for (const t of [0.25, 0.5, 0.75]) {
+    const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    if (pointInPoly(p, poly) && distToBoundary(p, poly) > 1e-6) return true;
+  }
+  return false;
 }
+
+/** Strict version of segmentsIntersect: an endpoint lying on the other segment
+ *  is not a crossing. */
+export function segmentsCrossProperly(a, b, c, d) {
+  const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+  const o1 = o(a, b, c), o2 = o(a, b, d), o3 = o(c, d, a), o4 = o(c, d, b);
+  return o1 * o2 < 0 && o3 * o4 < 0;
+}
+
+/** The polygon's corners pushed outward by `margin`, so a route can turn just
+ *  clear of a building rather than scraping its wall. Works for reflex corners
+ *  too: the bisector is checked against the polygon and flipped if it points
+ *  in. */
+export function offsetCorners(poly, margin = 1.5) {
+  const out = [];
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const v = poly[i], p = poly[(i - 1 + n) % n], q = poly[(i + 1) % n];
+    const u = unit({ x: p.x - v.x, y: p.y - v.y }), w = unit({ x: q.x - v.x, y: q.y - v.y });
+    let bis = { x: u.x + w.x, y: u.y + w.y };
+    if (Math.hypot(bis.x, bis.y) < 1e-9) bis = { x: -u.y, y: u.x }; // straight-through vertex
+    bis = unit(bis);
+    const half = Math.acos(clamp(u.x * w.x + u.y * w.y, -1, 1)) / 2;
+    const push = margin / Math.max(0.35, Math.sin(half));
+    let c = { x: v.x + bis.x * push, y: v.y + bis.y * push };
+    if (pointInPoly(c, poly)) c = { x: v.x - bis.x * push, y: v.y - bis.y * push };
+    out.push(c);
+  }
+  return out;
+}
+
+const unit = (v) => { const L = Math.hypot(v.x, v.y) || 1; return { x: v.x / L, y: v.y / L }; };
 
 /* --- Sprinkler arcs ---------------------------------------------------- */
 /* `aim` is degrees clockwise from "away from the street" (+y), which is how a
