@@ -77,11 +77,11 @@ const browser = await chromium.launch({ executablePath: EXEC });
   await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' });
   await page.click('#start-sample');
   await page.waitForTimeout(2000);
-  await out('docs/figures/plan.png', await page.screenshot({ clip: { x: 0, y: 145, width: 1110, height: 755 } }));
+  await out('docs/figures/plan.png', await page.screenshot({ clip: { x: 40, y: 80, width: 1360, height: 800 } }));
 
   await page.selectOption('#sel-focus', '3');
   await page.waitForTimeout(900);
-  await out('docs/figures/zone-focus.png', await page.screenshot({ clip: { x: 0, y: 145, width: 1110, height: 755 } }));
+  await out('docs/figures/zone-focus.png', await page.screenshot({ clip: { x: 40, y: 80, width: 1360, height: 800 } }));
   await page.close();
 }
 

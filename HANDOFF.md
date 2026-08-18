@@ -162,6 +162,18 @@ coverage and produced visibly worse plans (59 % overlap vs 87 %).
 Things that look arbitrary and are not. Changing any of these is fine — changing
 them *by accident* is the failure mode.
 
+- **The page chrome is attention-lab's, class for class.** Site bar (20px
+  wordmark with the dot pop, uppercase "Back to the Lab" with the chase
+  underline, `--rule` under it), `.exp-head` with the record voice
+  (`EXP-039 · tool · ● Live ——— stack`), the *name* as `.t-h1` with the dot,
+  `.t-lede`, the tool in a `.panel-card.setup-panel` (copy column + controls
+  column), then `.app-footer` with "Bench notes" as `.t-display` and `.notes`
+  rows, and the `.arrow-link` credit. Buttons are the site pill (`.btn`,
+  `.btn-primary`; `.btn-accent` is kept as an alias for the planner). The
+  planner sits on the container measure with a card edge, like attention-lab's
+  session panel, rather than bleeding to the viewport. If attention-lab's
+  chrome changes, port it here rather than diverging; `src/ui/chrome.ts` and
+  the top ~530 lines of its `styles.css` are the source.
 - **`tokens.css` is vendored, one-directional.** Never edit a value on this
   side. Two editable copies of a design system is how a system stops being one.
 - **Five zone colours, never cycled.** The palette was validated on the cream
