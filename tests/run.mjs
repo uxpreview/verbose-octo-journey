@@ -7,10 +7,10 @@
  * screen, so those are the claims under test. */
 
 import { sampleSite, blankSite, normalise, isObstacle, irrigableArea } from '../src/site.js';
-import { autoLayout, FLOW_SAFETY, MAX_HEADS_PER_ZONE, pickNozzle, packZones, trenchTree, inradius } from '../src/autolayout.js';
+import { autoLayout, FLOW_SAFETY, MAX_HEADS_PER_ZONE, pickNozzle, packZones, trenchTree, TrenchRouter, inradius } from '../src/autolayout.js';
 import { headGpm, dripGpm, runTime, precipRate, bucketGpm, effectiveRadius, PR_CONSTANT } from '../src/hydraulics.js';
 import { buildCoverageGrid, polygonCoverage, CoverageSampler } from '../src/coverage.js';
-import { pointInPoly, polyArea, rect, dist, inSector, sectorPoints, distToBoundary, segmentCrossesPoly } from '../src/geometry.js';
+import { pointInPoly, polyArea, rect, dist, inSector, sectorPoints, distToBoundary, segmentCrossesPoly, offsetCorners } from '../src/geometry.js';
 
 let pass = 0, fail = 0;
 const results = [];
@@ -169,17 +169,52 @@ test('the trench tree reaches every head exactly once', () => {
   const heads = Array.from({ length: 9 }, (_, i) => ({ id: i + 1, x: (i % 3) * 10, y: Math.floor(i / 3) * 10 }));
   const edges = trenchTree({ id: 's1', x: -5, y: -5 }, heads);
   assert(edges.length === heads.length, 'a spanning tree has one edge per node added');
-  const reached = new Set(edges.map(([, b]) => b.headId));
+  const reached = new Set(edges.map((e) => e[e.length - 1].headId));
   assert(reached.size === heads.length, 'every head is on the tree');
 });
 
-test('the trench prefers going around the house', () => {
+test('a trench that would go under the house is routed around it', () => {
   const house = { pts: rect(-3, 2, 3, 8) };
   const heads = [{ id: 1, x: 0, y: 10 }];
-  const [[, b]] = trenchTree({ id: 's1', x: 0, y: 0 }, heads, { structures: [house] });
-  assert(b.headId === 1, 'still connected'); // the penalty steers the tree, it never abandons a head
+  const [run] = trenchTree({ id: 's1', x: 0, y: 0 }, heads, { structures: [house] });
+  assert(run[run.length - 1].headId === 1, 'still connected');
+  assert(run.length > 2, `the run should bend around the house, got ${run.length} points`);
+  for (let i = 1; i < run.length; i++) assert(!segmentCrossesPoly(run[i - 1], run[i], house.pts), `leg ${i} goes under the house`);
+  let L = 0;
+  for (let i = 1; i < run.length; i++) L += dist(run[i - 1], run[i]);
   const direct = dist({ x: 0, y: 0 }, { x: 0, y: 10 });
-  assert(direct > 0, 'sanity');
+  assert(L > direct && L < direct * 2.5, `routed length ${L.toFixed(1)} vs ${direct} direct`);
+});
+
+test('a run that starts on the house wall and heads away is not "under the house"', () => {
+  // Hose bibs sit on the wall. The old test counted any touch as a crossing,
+  // which put an x8 penalty on every run out of the bib and taught the tree
+  // nothing.
+  const house = rect(10, 10, 20, 20);
+  assert(!segmentCrossesPoly({ x: 15, y: 20 }, { x: 15, y: 30 }, house), 'straight out from the back wall');
+  assert(!segmentCrossesPoly({ x: 15, y: 20 }, { x: 5, y: 22 }, house), 'out and along');
+  assert(!segmentCrossesPoly({ x: 10, y: 10 }, { x: 20, y: 5 }, house), 'from a corner, away');
+  assert(segmentCrossesPoly({ x: 20, y: 12 }, { x: 15, y: 5 }, house), 'clipping the corner from the wall is a crossing');
+  assert(segmentCrossesPoly({ x: 15, y: 20 }, { x: 15, y: 15 }, house), 'from the wall into the interior');
+});
+
+test('the router prices paving but does not treat it as a wall', () => {
+  const walk = { pts: rect(-1, 4, 1, 6) };
+  const r = new TrenchRouter([], [walk]);
+  const q = r.route({ x: 0, y: 0 }, { x: 0, y: 10 });
+  assert(q.pts.length === 2 && !q.routed, 'straight across the walk');
+  assert(q.cost > 10 && q.cost < 20, `priced up, got ${q.cost.toFixed(1)}`);
+});
+
+test('offset corners sit just outside the polygon, reflex corners included', () => {
+  const L = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 4 }, { x: 4, y: 4 }, { x: 4, y: 10 }, { x: 0, y: 10 }];
+  const cs = offsetCorners(L, 1.5);
+  assert(cs.length === 6, 'one per vertex');
+  for (const c of cs) {
+    assert(!pointInPoly(c, L), `corner ${c.x.toFixed(1)},${c.y.toFixed(1)} is inside`);
+    const d = distToBoundary(c, L);
+    assert(d > 1 && d < 3, `corner ${c.x.toFixed(1)},${c.y.toFixed(1)} is ${d.toFixed(2)} ft off the wall`);
+  }
 });
 
 /* --- end to end: a whole plan for the sample yard ----------------------- */
@@ -247,6 +282,15 @@ test('the plan actually covers the lawn', () => {
   assert(grid.nTarget > 0, 'there is ground to measure');
   assert(grid.pct >= 88, `only ${grid.pct.toFixed(1)} % covered`);
   assert(grid.pct2 >= 45, `only ${grid.pct2.toFixed(1)} % has head-to-head overlap`);
+});
+
+test('no auto-laid trench goes under a building', () => {
+  const structures = site.areas.filter((a) => a.type === 'structure');
+  for (const pipe of plan.pipes) {
+    for (let i = 1; i < pipe.pts.length; i++) {
+      for (const st of structures) assert(!segmentCrossesPoly(pipe.pts[i - 1], pipe.pts[i], st.pts), `zone ${pipe.zone} run goes under ${st.name}`);
+    }
+  }
 });
 
 test('ids are unique across heads, pipes and drip', () => {

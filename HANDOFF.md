@@ -10,7 +10,7 @@
 | **Landed** | [PR #6](https://github.com/uxpreview/verbose-octo-journey/pull/6) — **merged** |
 | **Deploys from** | `main` → `irrigation-planner-theta.vercel.app` |
 | **Intended host** | `irrigation.ryankm.com` — **assumed, not confirmed** (see §7.1) |
-| **Tests** | `npm test` — 36 passing on `feat/solver-perf` (34 on `main`) |
+| **Tests** | `npm test` — 40 passing on `feat/trench-routing` (34 on `main`) |
 | **Handoff written** | 2026-08-18 |
 
 ---
@@ -136,8 +136,9 @@ that makes it a lab rather than a drawing program.
 4. **Pack zones under the flow budget** (`chainByProximity`, `packZones`) — heads
    walked in a nearest-neighbour chain from the source, packed greedily at 85 %
    of measured flow, so a zone is a contiguous *place* in the yard.
-5. **Trench as a spanning tree** (`trenchTree`) — Prim's MST per zone, edge
-   weights multiplied where a run would cross a building (×8) or paving (×1.8).
+5. **Trench as a spanning tree** (`TrenchRouter`, `trenchTree`) — Prim's MST per
+   zone over *routed* edges: straight when clear of every building, else the
+   shortest path round the offset corners; paving priced ×1.8, never a wall.
 
 Beds run on drip rather than throw, with flow from bed area.
 
@@ -275,15 +276,26 @@ with first-fit-decreasing / capacitated clustering. Watch the existing tests —
 they assert no zone exceeds budget, so a merge must respect both the flow and
 head caps.
 
-**6. Trenches penalise crossing buildings but do not route around them.**
-`trenchTree` multiplies the edge weight for a run that crosses a structure, so
-the tree *prefers* a different topology — but the chosen edge is still drawn as
-a straight line, which can still pass through the house when no better topology
-exists. The drawn run is therefore not always diggable.
+**6. ~~Trenches penalise crossing buildings but do not route around them.~~
+Done** (`feat/trench-routing`, stacked on `feat/solver-perf`). Two things:
 
-*Fix:* insert waypoints — a visibility graph over obstacle corners, or a simple
-"route around the bounding box" pass on any edge flagged as crossing. This is
-the single change that would most improve the printed dig plan's credibility.
+- `segmentCrossesPoly` counted a *touch* as a crossing. Both sample bibs sit
+  on the house wall, so every run out of a bib carried the ×8 penalty and the
+  tree learned nothing from it (4 of the 5 "crossings" on the sample yard were
+  this). It now means "enters the interior": proper edge crossings, else three
+  interior sample points, boundary read as outside.
+- `TrenchRouter` (`src/autolayout.js`): a visibility graph over every
+  building's offset corners (`offsetCorners` in `geometry.js`, margin 1.5 ft,
+  reflex-safe), Dijkstra per query, corner-to-corner visibility computed once.
+  `trenchTree` weights each edge by its routed cost and returns polylines with
+  the turns in; `autoLayout` writes them straight into `pipes[].pts` — the
+  renderer, the sheet's pipe totals and the reachability test already took
+  polylines. Paving stays a ×1.8 price, not a wall. Boxed-in pairs fall back
+  to a straight run at ×8, drawn honestly.
+
+Sample yard: 0 runs under a building (was 1 real + 4 false), 610 ft of trench
+(was 586). Six new tests, including "no auto-laid trench goes under a
+building" on the sample plan.
 
 **7. Traced images are stored at full resolution.** `openImage` in
 `src/main.js` does `readAsDataURL` and stores the result in state, which is then

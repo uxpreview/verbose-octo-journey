@@ -68,11 +68,14 @@ The interesting part is not the drawing program, it is that the plan is
    chain from the water source and packed greedily at 85 % of measured flow, so
    a zone is a contiguous *place* in the yard rather than a scattering, and no
    valve is sized at 100 % of a bucket test. (`chainByProximity`, `packZones`)
-5. **Trench as a spanning tree.** Prim's MST per zone from its nearest source,
-   with edge weights multiplied where the run would cross a building (×8) or
-   paving (×1.8), so it routes around the house. A preference, not a guarantee:
-   where the only path is through, the penalty is paid and the run is drawn
-   honestly rather than hidden. (`trenchTree`)
+5. **Trench as a spanning tree, routed around the buildings.** Prim's MST per
+   zone from its nearest source, where every edge is a *routed* run: straight
+   when the line stays clear of every structure, otherwise the shortest path
+   through a visibility graph over the buildings' offset corners, so the drawn
+   trench really does go round the house. Paving is a price rather than a wall
+   (×1.8) — a walk can be sleeved. Only if a point is boxed in on every side is
+   a straight run drawn and priced as the tunnelling job it would be.
+   (`TrenchRouter`, `trenchTree`)
 
 Beds are handled separately, as drip rather than throw: flow from bed area at
 0.6 GPH emitters on a 12 in grid, and a bed on a drip zone counts as covered

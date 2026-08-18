@@ -19,7 +19,7 @@
 
 import {
   dist, clamp, deg, rad, pointInPoly, polyArea, centroid, bounds,
-  distToBoundary, nearestOnSegment, segmentCrossesPoly, aimVec,
+  distToBoundary, nearestOnSegment, segmentCrossesPoly, offsetCorners, aimVec,
 } from './geometry.js';
 import { HEAD_TYPES, headGpm, dripGpm, dripTubingFt, effectiveRadius } from './hydraulics.js';
 import { isIrrigable, isObstacle, newId, peekId } from './site.js';
@@ -235,47 +235,130 @@ export function packZones(chain, gpmOf, budget, maxPerZone = MAX_HEADS_PER_ZONE)
 
 /* --- 7. Trenching ------------------------------------------------------- */
 
+/** How much longer a run is allowed to look when it crosses paving. A walk can
+ *  be sleeved or bored under; a driveway is a real job. It is a price, not a
+ *  wall — the router still crosses paving when going round would be absurd. */
+export const PAVING_FACTOR = 1.8;
+/** How far a routed trench turns clear of a building's corner, in feet. */
+export const CORNER_MARGIN = 1.5;
+
+/** Routes a trench between two points without going under a building.
+ *
+ * The straight line is used whenever it stays out of every structure. When it
+ * would go through one, the run is bent around it: the corners of every
+ * building, pushed out by a small margin, form a visibility graph, and the
+ * shortest path through it is the route. That is the standard answer to
+ * shortest-path-around-obstacles and at the size of a yard it is instant.
+ * Paving is not an obstacle here, only a price — see PAVING_FACTOR.
+ *
+ * Built once per trenching pass so the corner-to-corner visibility is
+ * computed once and shared by every query. */
+export class TrenchRouter {
+  constructor(structures = [], paving = [], margin = CORNER_MARGIN) {
+    this.structures = structures;
+    this.paving = paving;
+    // Corner nodes: every building's offset corners, dropping any that land
+    // inside another building (two touching structures) since a trench cannot
+    // turn there.
+    this.corners = [];
+    for (const st of structures) {
+      for (const c of offsetCorners(st.pts, margin)) {
+        if (structures.some((o) => pointInPoly(c, o.pts))) continue;
+        this.corners.push(c);
+      }
+    }
+    const n = this.corners.length;
+    this.cc = new Float64Array(n * n).fill(Infinity);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const w = this.leg(this.corners[i], this.corners[j]);
+        this.cc[i * n + j] = w; this.cc[j * n + i] = w;
+      }
+    }
+  }
+
+  blocked(a, b) { return this.structures.some((st) => segmentCrossesPoly(a, b, st.pts)); }
+
+  /** Cost of one straight leg, or Infinity if it goes under a building. */
+  leg(a, b) {
+    if (this.blocked(a, b)) return Infinity;
+    const L = dist(a, b);
+    return this.paving.some((pv) => segmentCrossesPoly(a, b, pv.pts)) ? L * PAVING_FACTOR : L;
+  }
+
+  /** @returns {{pts: Array<{x:number,y:number}>, cost: number, routed: boolean}} */
+  route(a, b) {
+    const direct = this.leg(a, b);
+    if (direct < Infinity) return { pts: [a, b], cost: direct, routed: false };
+    const n = this.corners.length;
+    if (!n) return { pts: [a, b], cost: dist(a, b) * 8, routed: false };
+    // Dijkstra over a, the corners, and b. Nodes 0..n-1 are corners, n is a,
+    // n+1 is b. Small enough that a plain array scan beats a heap.
+    const N = n + 2, A = n, B = n + 1;
+    const cost = new Float64Array(N).fill(Infinity);
+    const prev = new Int32Array(N).fill(-1);
+    const done = new Uint8Array(N);
+    const fromA = this.corners.map((c) => this.leg(a, c));
+    const toB = this.corners.map((c) => this.leg(c, b));
+    cost[A] = 0;
+    for (;;) {
+      let u = -1;
+      for (let i = 0; i < N; i++) if (!done[i] && cost[i] < Infinity && (u < 0 || cost[i] < cost[u])) u = i;
+      if (u < 0 || u === B) break;
+      done[u] = 1;
+      const relax = (v, w) => { if (w < Infinity && cost[u] + w < cost[v]) { cost[v] = cost[u] + w; prev[v] = u; } };
+      if (u === A) { for (let j = 0; j < n; j++) relax(j, fromA[j]); }
+      else { for (let j = 0; j < n; j++) relax(j, this.cc[u * n + j]); relax(B, toB[u]); }
+    }
+    if (cost[B] === Infinity) {
+      // Boxed in — a source inside a courtyard, say. Draw it straight and
+      // price it as the tunnelling job it would be, so the tree avoids it if
+      // it possibly can.
+      return { pts: [a, b], cost: dist(a, b) * 8, routed: false };
+    }
+    const pts = [b];
+    for (let v = prev[B]; v !== A && v >= 0; v = prev[v]) pts.unshift(this.corners[v]);
+    pts.unshift(a);
+    return { pts, cost: cost[B], routed: true };
+  }
+}
+
 /** Prim's minimum spanning tree from the source out to every head in the zone.
  *
- * The edge weight is length times a penalty for what the trench would have to
- * cross, so the tree routes around the house rather than proposing that you
- * tunnel under a foundation. It is a preference, not a guarantee: on a plan
- * where the only path is through, the penalty is paid and the run is drawn
- * honestly rather than hidden. */
-export function trenchTree(source, heads, { structures = [], paving = [] } = {}) {
+ * Every edge is a routed trench, so its weight is the length you would
+ * actually dig — round the house, priced up across paving — and the tree
+ * chooses its topology on that basis. The result is a list of polylines, each
+ * from a node in the tree to a new node, with the corner turns included. */
+export function trenchTree(source, heads, { structures = [], paving = [], router } = {}) {
   const nodes = [{ x: source.x, y: source.y, sourceId: source.id }, ...heads];
-  const weight = (a, b) => {
-    let w = dist(a, b);
-    if (structures.some((s) => segmentCrossesPoly(a, b, s.pts))) w *= 8;
-    else if (paving.some((s) => segmentCrossesPoly(a, b, s.pts))) w *= 1.8;
-    return w;
-  };
+  const R = router ?? new TrenchRouter(structures, paving);
   // Textbook Prim: every node outside the tree remembers its cheapest link
   // into it, and each newly added node offers itself to the rest once. That is
-  // O(n²) weight evaluations in total, rather than re-scoring every
+  // O(n²) route evaluations in total, rather than re-scoring every
   // tree × outside pair on every step.
   const n = nodes.length;
   const inTree = new Uint8Array(n);
   const key = new Float64Array(n).fill(Infinity);
   const parent = new Int32Array(n).fill(-1);
+  const via = new Array(n).fill(null);
   const edges = [];
   let cur = 0;
   inTree[0] = 1;
   for (let added = 1; added < n; added++) {
     for (let j = 1; j < n; j++) {
       if (inTree[j]) continue;
-      const w = weight(nodes[cur], nodes[j]);
-      if (w < key[j]) { key[j] = w; parent[j] = cur; }
+      const r = R.route(nodes[cur], nodes[j]);
+      if (r.cost < key[j]) { key[j] = r.cost; parent[j] = cur; via[j] = r.pts; }
     }
     let best = -1;
     for (let j = 1; j < n; j++) if (!inTree[j] && (best < 0 || key[j] < key[best])) best = j;
     if (best < 0) break;
     inTree[best] = 1;
-    edges.push([parent[best], best]);
+    edges.push([parent[best], best, via[best]]);
     cur = best;
   }
   const ref = (n) => (n.sourceId ? { x: n.x, y: n.y, sourceId: n.sourceId } : { x: n.x, y: n.y, headId: n.id });
-  return edges.map(([i, j]) => [ref(nodes[i]), ref(nodes[j])]);
+  return edges.map(([i, j, pts]) => [ref(nodes[i]), ...pts.slice(1, -1).map((p) => ({ x: p.x, y: p.y })), ref(nodes[j])]);
 }
 
 /* --- The whole thing ---------------------------------------------------- */
@@ -359,11 +442,12 @@ export function autoLayout(state, opts = {}) {
   const pipes = [];
   const byZone = new Map();
   for (const h of heads) { if (!byZone.has(h.zone)) byZone.set(h.zone, []); byZone.get(h.zone).push(h); }
+  const router = new TrenchRouter(structures, paving);
   for (const [zone, group] of byZone) {
     const c = centroid(group);
     const src = state.sources.reduce((best, s) => (dist(s, c) < dist(best, c) ? s : best), state.sources[0]);
-    for (const [a, b] of trenchTree(src, group, { structures, paving })) {
-      pipes.push({ id: newId(), zone, pts: [a, b] });
+    for (const pts of trenchTree(src, group, { router })) {
+      pipes.push({ id: newId(), zone, pts });
     }
   }
   // Drip zones get the same treatment: one tree per zone reaching each bed's
@@ -378,8 +462,9 @@ export function autoLayout(state, opts = {}) {
   for (const [zone, group] of dripByZone) {
     const c = centroid(group);
     const src = state.sources.reduce((best, s) => (dist(s, c) < dist(best, c) ? s : best), state.sources[0]);
-    for (const [a, b] of trenchTree(src, group, { structures, paving })) {
-      pipes.push({ id: newId(), zone, pts: [{ x: a.x, y: a.y, sourceId: a.sourceId }, { x: b.x, y: b.y }], drip: true });
+    for (const pts of trenchTree(src, group, { router })) {
+      const last = pts.length - 1;
+      pipes.push({ id: newId(), zone, pts: pts.map((p, i) => (i === last ? { x: p.x, y: p.y } : p)), drip: true });
     }
   }
 
