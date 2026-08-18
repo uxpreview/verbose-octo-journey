@@ -1,185 +1,455 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>154 Low St — Irrigation Planner</title>
-<link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-<header class="topbar">
-  <div class="brand">
-    <span class="brand-title">154 Low St</span>
-    <span class="brand-sub">Irrigation planner</span>
-  </div>
-  <div class="toolbar" role="toolbar" aria-label="Map tools">
-    <select id="sel-layout" title="Which sprinkler layout is shown. Areas and water sources are shared.">
-      <option value="mine">My layout</option>
-      <option value="recommended">Recommended layout</option>
-    </select>
-    <span class="sep"></span>
-    <button class="tool" data-mode="select" aria-pressed="true" title="Select / drag (V)">Select</button>
-    <button class="tool" data-mode="head" title="Add sprinkler head (H)">+ Head</button>
-    <button class="tool" data-mode="pipe" title="Draw pipe / trench (P)">Pipe</button>
-    <button class="tool" data-mode="area" title="Draw an area: lawn, bed, hardscape (A)">Area</button>
-    <button class="tool" data-mode="measure" title="Measure distance (M)">Measure</button>
-    <span class="sep"></span>
-    <button id="btn-undo" class="ghost" title="Undo (⌘Z)">Undo</button>
-    <button id="btn-fit" class="ghost" title="Zoom to lot">Fit lot</button>
-    <label class="check"><input type="checkbox" id="chk-coverage" checked /> Coverage</label>
-    <label class="check"><input type="checkbox" id="chk-labels" checked /> Labels</label>
-    <select id="sel-underlay" title="Show a reference image under the drawing, for tracing">
-      <option value="none">No underlay</option>
-      <option value="sketch">Layout sketch</option>
-      <option value="aerial">Aerial 2025</option>
-    </select>
-    <input type="range" id="aerial-opacity" min="0.1" max="1" step="0.05" value="0.6" class="mini" title="Underlay opacity" />
-  </div>
-  <div class="hint" id="hint">Click a head to edit it. Drag to move.</div>
-</header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Irrigation Lab — plan a sprinkler system for any yard | Ryan McCarty</title>
+    <meta
+      name="description"
+      content="Draw your yard, set your water pressure and flow, and get a sprinkler layout: head placement, spray coverage, zones inside the flow budget, trench runs and a parts list. Runs entirely in your browser. EXP-039 in the Lab at ryankm.com."
+    />
+    <link rel="canonical" href="https://irrigation.ryankm.com/" />
+    <meta name="author" content="Ryan McCarty" />
 
-<main class="layout">
-  <div id="map" aria-label="Plan view of the property">
-    <svg id="plan" xmlns="http://www.w3.org/2000/svg" tabindex="0"></svg>
-    <div class="compass" id="compass" title="North"><svg viewBox="-12 -12 24 24"><g id="compass-rot"><path d="M0,-10 L4,4 L0,1 L-4,4 Z" fill="#fff"/><text y="-11" font-size="6" text-anchor="middle" fill="#fff" dominant-baseline="auto"></text></g></svg><span>N</span></div>
-    <div class="scalebar" id="scalebar"><div class="bar"></div><span id="scale-txt">10 ft</span></div>
-    <div class="zoomctl"><button id="zoom-in" title="Zoom in">+</button><button id="zoom-out" title="Zoom out">−</button></div>
-  </div>
+    <!-- A sprinkler arc drawn on the site's cream, in the deep teal and vermillion. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23fef6e9'/%3E%3Cpath d='M6 24 A14 14 0 0 1 26 24 Z' fill='none' stroke='%23003f48' stroke-width='2.2' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='24' r='3.2' fill='%23e73d00'/%3E%3C/svg%3E"
+    />
+    <meta name="theme-color" content="#fef6e9" />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/figtree-normal.woff2" crossorigin />
+    <link rel="stylesheet" href="/styles.css" />
 
-  <section class="panel">
-    <div class="card" id="card-supply">
-      <h2>Water supply</h2>
-      <div class="row">
-        <label for="psi">Pressure <output id="psi-out">50</output> PSI</label>
-        <input type="range" id="psi" min="25" max="80" step="1" value="50" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Ryan McCarty" />
+    <meta property="og:title" content="Irrigation Lab — plan a sprinkler system for any yard" />
+    <meta
+      property="og:description"
+      content="Draw your yard, enter what your spigot actually delivers, and the tool places the heads, packs the zones under your flow budget and routes the trenches. Nothing leaves your browser."
+    />
+    <meta property="og:url" content="https://irrigation.ryankm.com/" />
+    <meta property="og:image" content="https://irrigation.ryankm.com/opengraph.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A plan view of a yard with sprinkler arcs overlapping across the lawn and trench runs back to a hose bib." />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- The site describes every experiment this way, so an agent reading one
+         page of ryankm.com and this one gets the same shape of answer. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Irrigation Lab",
+        "alternateName": "EXP-039",
+        "url": "https://irrigation.ryankm.com/",
+        "applicationCategory": "DesignApplication",
+        "operatingSystem": "Any modern browser",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "description": "A browser tool for planning a DIY sprinkler system on any property. Draw the yard, measure the supply, and the tool sizes nozzles, places heads head-to-head, packs zones under the flow budget, routes trenches and prints a dig plan.",
+        "author": { "@type": "Person", "name": "Ryan McCarty", "url": "https://ryankm.com" },
+        "isPartOf": { "@type": "CollectionPage", "name": "The Lab", "url": "https://ryankm.com/lab" }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="site-bar">
+      <div class="container bar-inner">
+        <a class="wordmark" href="https://ryankm.com">Ryan McCarty<span class="dot">.</span></a>
+        <a class="bar-back" href="https://ryankm.com/lab">Back to the Lab<span aria-hidden="true">↗</span></a>
       </div>
-      <div class="row">
-        <label for="gpm">Flow available <output id="gpm-out">10</output> GPM</label>
-        <input type="range" id="gpm" min="3" max="25" step="0.5" value="10" />
-      </div>
-      <details class="sub">
-        <summary>Bucket test helper</summary>
-        <p class="small">Time how long a 5-gallon bucket takes to fill at the spigot.</p>
-        <div class="inline">
-          <input type="number" id="bucket-sec" min="5" max="300" step="1" placeholder="seconds" />
-          <button id="btn-bucket" class="ghost">Set GPM</button>
-        </div>
-      </details>
-      <div class="row">
-        <label for="def-type">New heads default</label>
-        <div class="inline">
-          <select id="def-type">
-            <option value="spray">Spray (8–15 ft)</option>
-            <option value="rotor">Rotor (18–35 ft)</option>
-            <option value="mp">MP rotator (13–30 ft)</option>
-          </select>
-          <select id="def-arc">
-            <option value="360">Full 360°</option>
-            <option value="180" selected>Half 180°</option>
-            <option value="90">Quarter 90°</option>
-            <option value="270">270°</option>
-          </select>
-        </div>
-      </div>
-      <div class="row">
-        <label for="def-radius">Default radius <output id="def-radius-out">12</output> ft</label>
-        <input type="range" id="def-radius" min="4" max="35" step="0.5" value="12" />
-      </div>
-      <p class="small muted">Radius shrinks/grows with pressure. GPM per head is estimated from typical Rain Bird / Hunter nozzle charts.</p>
     </div>
 
-    <div class="card" id="card-head">
-      <h2>Selected head <span id="head-title" class="muted"></span></h2>
-      <div id="head-empty" class="empty">No head selected. Use <b>+ Head</b> then click the map, or click an existing head.</div>
-      <div id="head-controls" hidden>
-        <div class="row">
-          <label for="h-type">Type</label>
-          <select id="h-type">
-            <option value="spray">Spray</option>
-            <option value="rotor">Rotor</option>
-            <option value="mp">MP rotator</option>
-          </select>
+    <main id="app">
+      <!-- ------------------------------------------------------ START --- -->
+      <section class="screen screen-start" id="screen-start">
+        <div class="container">
+          <header class="hero">
+            <p class="eyebrow">EXP-039 · Vanilla JS · SVG · No build step</p>
+            <h1 class="claim">A sprinkler plan for <em>your</em> yard, not mine.</h1>
+            <p class="lede">
+              Draw the lot, say what your spigot actually delivers, and this
+              places the heads, sizes the nozzles to the shape of each piece of
+              ground, packs the zones under your flow budget, routes the
+              trenches around the house and prints a dig plan you can take to
+              the store. It runs entirely in your browser — no account, no
+              address, no server.
+            </p>
+          </header>
+
+          <h2 class="section-head"><span class="label">Start</span></h2>
+          <div class="start-grid">
+            <button class="start-card" id="start-sample">
+              <span class="start-kicker">Have a look first</span>
+              <span class="start-title">Open the example yard</span>
+              <span class="start-body">
+                An invented 70 × 120 ft lot with a house, a drive, beds, a patio
+                and a shed. Nothing real is modelled. Good for seeing what the
+                auto-layout does before you draw anything.
+              </span>
+              <span class="start-go">Open<span aria-hidden="true"> →</span></span>
+            </button>
+
+            <div class="start-card start-card-form">
+              <span class="start-kicker">Know your dimensions</span>
+              <span class="start-title">Start from a blank lot</span>
+              <span class="start-body">Enter the lot size and draw the yard on top of it.</span>
+              <div class="field-row">
+                <label class="field">
+                  <span>Width</span>
+                  <input type="number" id="lot-w" min="15" max="800" step="1" value="70" />
+                </label>
+                <span class="times" aria-hidden="true">×</span>
+                <label class="field">
+                  <span>Depth</span>
+                  <input type="number" id="lot-d" min="15" max="800" step="1" value="120" />
+                </label>
+                <label class="field">
+                  <span>Units</span>
+                  <select id="lot-units">
+                    <option value="us">feet</option>
+                    <option value="metric">metres</option>
+                  </select>
+                </label>
+              </div>
+              <button class="btn" id="start-blank">Create the lot</button>
+            </div>
+
+            <div class="start-card start-card-form">
+              <span class="start-kicker">Have a picture of it</span>
+              <span class="start-title">Trace your own image</span>
+              <span class="start-body">
+                A screenshot of a satellite view, a survey, a plot plan, a
+                sketch on graph paper. You set the scale by clicking two points
+                you know the distance between. The image is read straight off
+                your disk and never uploaded.
+              </span>
+              <label class="btn btn-file">
+                Choose an image
+                <input type="file" id="start-image" accept="image/*" hidden />
+              </label>
+            </div>
+          </div>
+
+          <div class="resume-row" id="resume-row" hidden>
+            <p class="small">
+              You have a saved plan in this browser.
+              <button class="linkish" id="start-resume">Pick it back up</button>
+              ·
+              <button class="linkish danger-text" id="start-discard">Discard it</button>
+            </p>
+          </div>
+
+          <h2 class="section-head"><span class="label">How it works</span></h2>
+          <div class="bench">
+            <div class="bench-item">
+              <h3>1 · Size the nozzle to the shape</h3>
+              <p>
+                The tool measures the largest circle that fits inside each piece
+                of ground — the real "how wide is this" — rather than its area.
+                A 2,000 sq ft lawn and a 2,000 sq ft side strip want completely
+                different heads, and area alone cannot tell them apart. Wide
+                open ground gets gear rotors, ordinary lawns get rotary nozzles,
+                narrow strips get fixed sprays.
+              </p>
+            </div>
+            <div class="bench-item">
+              <h3>2 · Ring the edge, fill the middle</h3>
+              <p>
+                Heads go on the corners first, with the arc matched to the
+                interior angle and aimed down the bisector, then along the edges
+                as half circles facing in, then on a triangular lattice wherever
+                the perimeter ring cannot reach. Spacing is head-to-head: every
+                head throws far enough to hit its neighbour. That looks like
+                absurd overlap on paper and it is the entire trick — a single
+                head puts down most of its water close in, so anything less
+                leaves dry rings you cannot fix by turning the water up.
+              </p>
+            </div>
+            <div class="bench-item">
+              <h3>3 · Prune what earns nothing</h3>
+              <p>
+                The corner and edge passes double up, so a greedy pass tries
+                removing each head cheapest-first and keeps the removal only if
+                coverage holds and the head-to-head overlap barely moves. Set
+                cover is NP-hard; a yard does not deserve a branch-and-bound.
+                This typically drops a third of the placements.
+              </p>
+            </div>
+            <div class="bench-item">
+              <h3>4 · Pack zones under the flow budget</h3>
+              <p>
+                Your spigot is the constraint that decides everything. Heads are
+                walked in a nearest-neighbour chain from the water source and
+                packed greedily into zones at 85 % of measured flow, so a zone
+                is a contiguous <em>place</em> in the yard rather than a
+                scattering, and no valve is sized at 100 % of a bucket test.
+              </p>
+            </div>
+            <div class="bench-item">
+              <h3>5 · Trench as a spanning tree</h3>
+              <p>
+                Each zone gets a minimum spanning tree from its nearest source
+                out to every head, with edge weights multiplied where the run
+                would cross a building or paving. It is a preference, not a
+                guarantee: where the only path is through, the penalty is paid
+                and the run is drawn honestly rather than hidden.
+              </p>
+            </div>
+            <div class="bench-item">
+              <h3>What it is not</h3>
+              <p>
+                Not a hydraulic design. Nozzle flow and throw are catalogue
+                approximations, friction loss in the pipe is not modelled, and
+                nothing here knows your local code, your backflow requirements
+                or where your utilities are buried. It is close enough to size
+                zones and argue with a parts list. It is not close enough to
+                skip a pressure gauge, a bucket, or a call before you dig.
+              </p>
+            </div>
+          </div>
+
+          <p class="colophon">
+            EXP-039 in <a href="https://ryankm.com/lab">the Lab at ryankm.com</a>.
+            Source on <a href="https://github.com/uxpreview/verbose-octo-journey">GitHub</a>.
+          </p>
         </div>
-        <div class="row">
-          <label for="h-radius">Radius <output id="h-radius-out">12</output> ft</label>
-          <input type="range" id="h-radius" min="4" max="35" step="0.5" value="12" />
-        </div>
-        <div class="row">
-          <label for="h-arc">Arc <output id="h-arc-out">180</output>°</label>
-          <input type="range" id="h-arc" min="30" max="360" step="5" value="180" />
-        </div>
-        <div class="row">
-          <label for="h-aim">Aim <output id="h-aim-out">0</output>° (0 = toward back yard) — or drag the white handle</label>
-          <input type="range" id="h-aim" min="0" max="359" step="1" value="0" />
-        </div>
-        <div class="row">
-          <label for="h-zone">Zone</label>
-          <div class="inline">
-            <select id="h-zone"></select>
-            <span id="h-gpm" class="stat"></span>
+      </section>
+
+      <!-- ----------------------------------------------------- PLANNER --- -->
+      <section class="screen screen-plan" id="screen-plan" hidden>
+        <div class="plan-bar">
+          <div class="plan-bar-left">
+            <button class="linkish back" id="btn-home"><span aria-hidden="true">←</span> Start over</button>
+            <input class="site-name" id="site-name" aria-label="Name of this plan" />
+          </div>
+          <div class="toolbar" role="toolbar" aria-label="Drawing tools">
+            <button class="tool" data-mode="select" aria-pressed="true" title="Select and drag (V)">Select</button>
+            <button class="tool" data-mode="head" title="Add a sprinkler head (H)">Head</button>
+            <button class="tool" data-mode="pipe" title="Draw a trench run (P)">Pipe</button>
+            <button class="tool" data-mode="area" title="Draw an area (A)">Area</button>
+            <button class="tool" data-mode="measure" title="Measure a distance (M)">Measure</button>
+            <span class="sep" role="separator"></span>
+            <button class="ghost" id="btn-undo" title="Undo (Ctrl/Cmd Z)">Undo</button>
+            <button class="ghost" id="btn-fit" title="Zoom to the lot">Fit</button>
+            <span class="sep" role="separator"></span>
+            <label class="check"><input type="checkbox" id="chk-coverage" checked /> Coverage</label>
+            <label class="check"><input type="checkbox" id="chk-arcs" checked /> Arcs</label>
+            <label class="check"><input type="checkbox" id="chk-labels" checked /> Labels</label>
+            <select id="sel-focus" aria-label="Show one zone at a time">
+              <option value="all">All zones</option>
+            </select>
           </div>
         </div>
-        <div class="inline">
-          <button id="btn-dup" class="ghost">Duplicate</button>
-          <button id="btn-del" class="danger">Delete</button>
+        <p class="hint" id="hint"></p>
+
+        <div class="plan-body">
+          <div id="map" aria-label="Plan view of the yard">
+            <svg id="plan" xmlns="http://www.w3.org/2000/svg" tabindex="0" role="img" aria-label="Scale drawing of the yard with sprinkler heads, spray arcs and trench runs"></svg>
+            <div class="compass" id="compass" title="North">
+              <svg viewBox="-14 -14 28 28" aria-hidden="true"><g id="compass-rot"><path d="M0,-11 L4.5,4 L0,1 L-4.5,4 Z" fill="currentColor" /></g></svg>
+              <span>N</span>
+            </div>
+            <div class="scalebar"><div class="bar"></div><span id="scale-txt">10 ft</span></div>
+            <div class="zoomctl">
+              <button id="zoom-in" aria-label="Zoom in">+</button>
+              <button id="zoom-out" aria-label="Zoom out">−</button>
+            </div>
+            <div class="legend" id="legend"></div>
+          </div>
+
+          <aside class="panel" aria-label="Plan controls">
+            <section class="card" id="card-supply">
+              <h2 class="label">Your water supply</h2>
+              <p class="small muted">
+                The one measurement that decides the whole design. Guessing here
+                is why home systems brown out at the far end of a zone.
+              </p>
+              <div class="row">
+                <label for="psi">Pressure <output id="psi-out">50</output> PSI</label>
+                <input type="range" id="psi" min="20" max="90" step="1" value="50" />
+              </div>
+              <div class="row">
+                <label for="gpm">Flow available <output id="gpm-out">10</output> <span class="u-flow">GPM</span></label>
+                <input type="range" id="gpm" min="2" max="30" step="0.5" value="10" />
+              </div>
+              <details class="sub">
+                <summary>Measure it with a bucket</summary>
+                <p class="small">
+                  Open the outside spigot all the way and time how long a bucket
+                  of known size takes to fill. That is your real flow, hose and
+                  all.
+                </p>
+                <div class="inline">
+                  <label class="field"><span>Bucket</span><input type="number" id="bucket-vol" min="1" step="0.5" value="5" /></label>
+                  <label class="field"><span>Seconds</span><input type="number" id="bucket-sec" min="1" max="600" step="1" placeholder="38" /></label>
+                  <button class="btn" id="btn-bucket">Use it</button>
+                </div>
+                <p class="small muted" id="bucket-out"></p>
+              </details>
+              <div class="row">
+                <label for="units">Units</label>
+                <select id="units">
+                  <option value="us">Feet · gallons · inches</option>
+                  <option value="metric">Metres · litres · millimetres</option>
+                </select>
+              </div>
+            </section>
+
+            <section class="card" id="card-auto">
+              <h2 class="label">Auto-layout</h2>
+              <div class="row">
+                <label for="auto-nozzle">Nozzles</label>
+                <select id="auto-nozzle">
+                  <option value="auto">Chosen by the shape of the ground</option>
+                  <option value="mp">Rotary nozzles everywhere</option>
+                  <option value="spray">Fixed sprays everywhere</option>
+                  <option value="rotor">Gear rotors everywhere</option>
+                </select>
+              </div>
+              <label class="check"><input type="checkbox" id="auto-drip" checked /> Beds on drip line rather than spray</label>
+              <div class="inline">
+                <button class="btn btn-accent" id="btn-auto">Generate the layout</button>
+                <button class="ghost" id="btn-clear-heads">Clear heads</button>
+              </div>
+              <div class="notes" id="auto-notes"></div>
+            </section>
+
+            <section class="card" id="card-zones">
+              <h2 class="label">Zones</h2>
+              <div id="zones-table"></div>
+              <div class="stats" id="stats"></div>
+              <div class="inline">
+                <button class="ghost" id="btn-sheet">Plan sheet &amp; parts list</button>
+              </div>
+            </section>
+
+            <section class="card" id="card-head">
+              <h2 class="label">Selected head <span id="head-title" class="muted"></span></h2>
+              <p id="head-empty" class="empty">Nothing selected. Click a head on the plan, or use the <b>Head</b> tool to drop one.</p>
+              <div id="head-controls" hidden>
+                <div class="row">
+                  <label for="h-type">Type</label>
+                  <select id="h-type">
+                    <option value="spray">Fixed spray</option>
+                    <option value="rotor">Gear rotor</option>
+                    <option value="mp">Rotary nozzle</option>
+                  </select>
+                </div>
+                <div class="row">
+                  <label for="h-radius">Throw <output id="h-radius-out">12</output> <span class="u-len">ft</span></label>
+                  <input type="range" id="h-radius" min="4" max="35" step="0.5" value="12" />
+                </div>
+                <div class="row">
+                  <label for="h-arc">Arc <output id="h-arc-out">180</output>°</label>
+                  <input type="range" id="h-arc" min="30" max="360" step="5" value="180" />
+                </div>
+                <div class="row">
+                  <label for="h-aim">Aim <output id="h-aim-out">0</output>° — or drag the handle on the plan</label>
+                  <input type="range" id="h-aim" min="0" max="359" step="1" value="0" />
+                </div>
+                <div class="row">
+                  <label for="h-zone">Zone</label>
+                  <div class="inline">
+                    <select id="h-zone"></select>
+                    <span id="h-gpm" class="stat-inline"></span>
+                  </div>
+                </div>
+                <div class="inline">
+                  <button class="ghost" id="btn-dup">Duplicate</button>
+                  <button class="ghost danger-text" id="btn-del">Delete</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="card" id="card-areas">
+              <h2 class="label">The yard</h2>
+              <div class="row">
+                <label for="area-type">Draw as</label>
+                <select id="area-type"></select>
+              </div>
+              <div id="areas-list" class="list"></div>
+              <div class="inline">
+                <select id="pipe-zone" aria-label="Zone for new pipe and heads"></select>
+                <button class="ghost" id="btn-add-source">Add a water source</button>
+              </div>
+              <div id="sources-list" class="list"></div>
+            </section>
+
+            <section class="card" id="card-site">
+              <h2 class="label">Plan file &amp; site</h2>
+              <div class="row">
+                <label for="north">North <output id="north-out">0</output>° from up</label>
+                <input type="range" id="north" min="0" max="359" step="1" value="0" />
+              </div>
+              <div class="row">
+                <label for="water-week">Water <output id="water-out">1.0</output> <span class="u-depth">in</span> per week over <output id="days-out">3</output> starts</label>
+                <input type="range" id="water-week" min="0.25" max="2.5" step="0.05" value="1" />
+                <input type="range" id="days-week" min="1" max="7" step="1" value="3" />
+              </div>
+              <details class="sub" id="underlay-block">
+                <summary>Reference image</summary>
+                <div class="inline">
+                  <label class="btn btn-file">Choose<input type="file" id="underlay-file" accept="image/*" hidden /></label>
+                  <button class="ghost" id="underlay-clear">Remove</button>
+                </div>
+                <div class="row">
+                  <label for="underlay-op">Opacity <output id="underlay-op-out">0.85</output></label>
+                  <input type="range" id="underlay-op" min="0.1" max="1" step="0.05" value="0.85" />
+                </div>
+              </details>
+              <div class="inline">
+                <button class="ghost" id="btn-export">Export JSON</button>
+                <label class="btn btn-file">Import<input type="file" id="file-import" accept="application/json" hidden /></label>
+                <button class="ghost danger-text" id="btn-reset">Reset</button>
+              </div>
+              <p class="small muted" id="save-note">Saved in this browser as you work. Nothing is sent anywhere.</p>
+            </section>
+          </aside>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <div class="card" id="card-zones">
-      <h2>Zones &amp; pipe</h2>
-      <div id="zones-table"></div>
-      <div class="stats">
-        <div><span class="k">Heads</span><span class="v" id="stat-heads">0</span></div>
-        <div><span class="k">Pipe</span><span class="v" id="stat-pipe">0 ft</span></div>
-        <div><span class="k">Lawn covered</span><span class="v" id="stat-cov">–</span></div>
-        <div><span class="k">Double covered</span><span class="v" id="stat-cov2">–</span></div>
-      </div>
-      <div class="inline">
-        <select id="pipe-zone" title="Zone for new pipe"></select>
-        <button id="btn-clear-pipes" class="ghost">Clear pipes</button>
-        <button id="btn-regen" class="ghost" title="Generate the recommended heads, zones and pipe runs (switches to the Recommended layout)">Build recommended</button>
-        <button id="btn-copy-rec" class="ghost" title="Copy the recommended layout into My layout so you can edit it">Use as my layout</button>
-      </div>
-      <div id="sources-list" class="list"></div>
-      <div class="inline"><button id="btn-add-source" class="ghost">+ Water source</button></div>
-      <p class="small muted">Blue drops = hose bibs. Drag to move; pipes snap to them.</p>
-    </div>
+      <!-- -------------------------------------------------- PLAN SHEET --- -->
+      <section class="screen screen-sheet" id="screen-sheet" hidden>
+        <div class="container">
+          <div class="sheet-actions">
+            <button class="linkish back" id="btn-sheet-back"><span aria-hidden="true">←</span> Back to the plan</button>
+            <button class="btn" id="btn-print">Print / save as PDF</button>
+          </div>
+          <div id="sheet"></div>
+        </div>
+      </section>
+    </main>
 
-    <div class="card" id="card-areas">
-      <h2>Areas</h2>
-      <div class="inline">
-        <select id="area-type">
-          <option value="lawn">Lawn</option>
-          <option value="bed">Garden bed</option>
-          <option value="hardscape">Hardscape (patio, drive, walk)</option>
-          <option value="structure">Structure (shed, deck)</option>
-          <option value="tree">Tree canopy</option>
-          <option value="woods">Woods</option>
-          <option value="fence">Fence line</option>
-        </select>
-      </div>
-      <div id="areas-list" class="list"></div>
-      <div class="inline"><button id="btn-reseed" class="ghost" title="Replace all areas with the layout traced from the sketch">Reset areas to sketch</button></div>
-      <p class="small muted">Coverage counts lawn + beds. Hardscape, structures and woods are skipped.</p>
-    </div>
+    <!-- ------------------------------------------------ SCALE DIALOG --- -->
+    <dialog id="scale-dialog">
+      <form method="dialog" class="scale-form">
+        <h2 class="label">Set the scale</h2>
+        <p class="small">
+          Click two points on the image that you know the real distance between
+          — a driveway width, a house wall, the long side of the lot — then type
+          that distance.
+        </p>
+        <div class="scale-stage"><canvas id="scale-canvas"></canvas></div>
+        <div class="inline">
+          <label class="field">
+            <span>That distance is</span>
+            <input type="number" id="scale-dist" min="0.5" step="0.5" placeholder="20" />
+          </label>
+          <select id="scale-units">
+            <option value="us">feet</option>
+            <option value="metric">metres</option>
+          </select>
+          <span class="small muted" id="scale-status">Click the first point.</span>
+        </div>
+        <div class="inline right">
+          <button class="ghost" value="cancel">Cancel</button>
+          <button class="btn btn-accent" id="scale-ok" value="ok" disabled>Use this scale</button>
+        </div>
+      </form>
+    </dialog>
 
-    <div class="card" id="card-file">
-      <h2>Plan file</h2>
-      <div class="inline">
-        <button id="btn-export" class="ghost">Export JSON</button>
-        <label class="ghost btn-like">Import <input type="file" id="file-import" accept="application/json" hidden /></label>
-        <button id="btn-reset" class="danger">Reset</button>
-      </div>
-      <p class="small muted">Saved in this browser automatically.</p>
-      <details class="sub">
-        <summary>Reference photos</summary>
-        <div class="photos" id="photos"></div>
-      </details>
-    </div>
-  </section>
-</main>
-
-<script src="app.js"></script>
-</body>
+    <noscript><p class="container">This tool is a drawing program; it needs JavaScript.</p></noscript>
+    <script type="module" src="/src/main.js"></script>
+  </body>
 </html>

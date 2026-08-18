@@ -1,0 +1,17 @@
+{
+  "name": "irrigation-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Plan a DIY sprinkler system for any yard: draw the lot, measure the supply, and get head placement, zones, trench runs and a dig plan",
+  "keywords": ["irrigation", "sprinkler", "landscape", "planning", "svg", "coverage", "zoning"],
+  "license": "MIT",
+  "author": "Ryan McCarty (https://ryankm.com)",
+  "homepage": "https://irrigation.ryankm.com/",
+  "repository": { "type": "git", "url": "git+https://github.com/uxpreview/verbose-octo-journey.git" },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "test": "node tests/run.mjs"
+  }
+}
