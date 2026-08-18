@@ -312,9 +312,9 @@ page.
 
 ### Polish
 
-**8. There is no CI.** No `.github/` at all, so `npm test` runs only locally. A
-GitHub Action running `npm test` on PRs is about ten lines and the tests are
-fast and dependency-free.
+**8. ~~There is no CI.~~ Done** (`chore/ci`): `.github/workflows/test.yml`
+runs `npm test` on pushes to `main` and on every pull request. Node 22, no
+install step.
 
 **9. The map is pointer-only.** The SVG has `tabindex="0"` but there is no
 keyboard path to select a head, nudge one, or reshape an area — only `[`/`]` for
