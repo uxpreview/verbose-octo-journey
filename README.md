@@ -1,68 +1,144 @@
-# 154 Low St — Irrigation Planner
+# Irrigation Lab
 
-A browser-based model of the house and yard at 154 Low St, Newburyport MA, for planning a DIY sprinkler system: where the heads go, what each one sprays, where the trenches run, and whether each zone fits the water supply.
+Plan a DIY sprinkler system for any yard. Draw the lot, say what your spigot
+actually delivers, and the tool sizes the nozzles to the shape of each piece of
+ground, places the heads head-to-head, packs the zones under your flow budget,
+routes the trenches around the house, and prints a dig plan with a parts list.
 
-Live: https://irrigation-planner-theta.vercel.app (deploys from `main`).
+**Try it: [irrigation.ryankm.com](https://irrigation.ryankm.com/)** — a browser,
+and a bucket if you want the numbers to mean anything. EXP-039 in
+[the Lab](https://ryankm.com/lab).
 
-No build step. Open `index.html` from any static server (or deploy the folder as-is to Vercel / GitHub Pages).
+Vanilla JavaScript and SVG. No framework, no build step, no dependencies, no
+server, no analytics, and no network call anywhere in the repository.
+
+![A plan view of a yard: lawn, beds, a house and a drive drawn as flat tints on paper, with overlapping sprinkler arcs in five zone colours, numbered heads, and dashed trench runs converging on two hose bibs.](docs/figures/plan.png)
+
+Any one zone can be pulled out on its own, which is how you check whether the
+zone you are about to trench actually covers what it is responsible for:
+
+![The same plan with zone 3 selected: its violet arcs and trench stay lit while every other zone drops to grey, and the coverage wash is recomputed for that zone alone.](docs/figures/zone-focus.png)
+
+Both pictures are drawn by the app's own renderer, running headlessly over the
+built-in sample yard — `node scripts/make-figures.mjs` regenerates them. So they
+cannot drift from what the tool actually draws.
+
+## Quickstart
+
+Node 20 or newer, only to serve the files — there is nothing to install.
 
 ```
-python3 -m http.server 8765   # then open http://localhost:8765
+npm run dev      # http://localhost:8765
+npm test         # the invariants a plan has to hold to be diggable
 ```
 
-## What it does
+Any static host will serve the directory as-is.
 
-- **2D plan view** — a drawn model of the lot, not a map: street at the bottom, house, driveway, walk, lawns, beds, patio, shed, big tree, fences. Rendered as SVG in "plan feet" (x along Low St, y into the yard). Scroll to zoom, drag to pan, compass and scale bar in the corners.
-- **Real geometry underneath** — parcel line from MassGIS (Level 3 parcels, `LOC_ID M_249480_951578`, 8,603 sq ft) rotated into the plan frame; optional underlays (Ryan's layout sketch, or the MassGIS spring-2025 aerial pre-rotated to the same frame) fade the drawing so you can trace corrections. `Reset areas to sketch` re-traces the layout without touching heads or pipes.
-- **Areas** — lawn, garden beds, hardscape, structures (incl. the house, shed, outdoor shower), tree canopy, fence lines. Traced from Ryan's layout sketch (`Photos/layout.heic`, also available as the **Layout sketch** underlay) with the aerial as a cross-check; every polygon can be reshaped (drag corners, click a hollow dot to add one, right-click to remove) or deleted.
-- **Sprinkler heads** — click to drop, drag to move. Type (spray / rotor / MP rotator), radius, arc and aim per head; drag the white handle to aim and set reach. Coverage overlay shows uncovered lawn in red, single coverage faint green, head-to-head overlap blue.
-- **Pipe / trench** — click-to-draw runs that snap to heads and the water source; total feet per zone.
-- **Zones** — GPM per zone vs. flow available, flagged when a zone is over budget.
-- **Supply sliders** — PSI (scales spray radius) and GPM (bucket-test helper included).
-- **Plan file** — auto-saved in the browser, plus Export / Import JSON.
+## Three ways to start
+
+|  | |
+|---|---|
+| **The example yard** | An invented 70 × 120 ft lot. Nothing real is modelled; it exists so the solver has a non-trivial problem on the first click. |
+| **A blank lot** | Enter width × depth in feet or metres and draw the yard on top of it. |
+| **Your own image** | A satellite screenshot, a survey, a plot plan, a sketch on graph paper. You set the scale by clicking two points you know the distance between. The file is read straight off disk with `FileReader` and never leaves the page. |
+
+## How the layout is solved
+
+The interesting part is not the drawing program, it is that the plan is
+*computed*. Given the polygons, the sources and the supply:
+
+1. **Size the nozzle to the shape.** Each piece of ground is measured by the
+   largest circle that fits inside it, sampled — the real "how wide is this"
+   — rather than by its area. A 2,000 sq ft lawn and a 2,000 sq ft side strip
+   want completely different heads and area alone cannot tell them apart. Wide
+   open ground gets gear rotors, ordinary lawns get rotary nozzles, narrow
+   strips get fixed sprays. (`pickNozzle`)
+2. **Ring the edge, fill the middle.** Corners first, with the arc matched to
+   the interior angle and aimed down the inward bisector — computed by
+   construction and then verified against the polygon, so reflex corners on an
+   L-shaped lawn come out right. Then the edges as half circles facing in, then
+   a triangular lattice wherever the perimeter ring cannot reach. Spacing is
+   head-to-head. (`placeHeads`)
+3. **Prune what earns nothing.** The corner and edge passes double up, so a
+   greedy pass tries each head cheapest-first and keeps the removal only if
+   coverage holds *and* head-to-head overlap barely moves. Set cover is NP-hard
+   and a yard does not deserve a branch-and-bound. This drops roughly a third of
+   the placements. (`pruneHeads`)
+4. **Pack zones under the flow budget.** Heads are walked in a nearest-neighbour
+   chain from the water source and packed greedily at 85 % of measured flow, so
+   a zone is a contiguous *place* in the yard rather than a scattering, and no
+   valve is sized at 100 % of a bucket test. (`chainByProximity`, `packZones`)
+5. **Trench as a spanning tree.** Prim's MST per zone from its nearest source,
+   with edge weights multiplied where the run would cross a building (×8) or
+   paving (×1.8), so it routes around the house. A preference, not a guarantee:
+   where the only path is through, the penalty is paid and the run is drawn
+   honestly rather than hidden. (`trenchTree`)
+
+Beds are handled separately, as drip rather than throw: flow from bed area at
+0.6 GPH emitters on a 12 in grid, and a bed on a drip zone counts as covered
+because there is no arc to model.
+
+### Head-to-head, and why the plan looks over-watered
+
+Every head throws far enough to reach its neighbour. On paper that looks like
+absurd overlap, and it is the entire trick: a single head puts down most of its
+water close in, so a layout with 100 % single coverage and no overlap browns out
+in rings at the edge of every arc. The pruner is therefore scored on *both*
+numbers, and the panel reports both — "covered" and "head to head".
+
+## What it is not
+
+Not a hydraulic design. Nozzle flow and throw are catalogue approximations
+(`hydraulics.js` documents every constant and where it comes from), friction
+loss along the pipe is not modelled, and nothing here knows your local code,
+your backflow requirements, or where your utilities are buried. It is close
+enough to size zones and argue with a parts list. It is not close enough to skip
+a pressure gauge, a bucket, or a call before you dig.
 
 ## Files
 
 | Path | What |
 |---|---|
-| `index.html`, `styles.css`, `app.js` | the app (vanilla JS + SVG, no dependencies) |
-| `data/parcel.geojson` | MassGIS parcel polygon (WGS84), converted to plan feet at load |
-| `data/house.geojson` | OSM building footprint, way 196723669 (reference only; the drawn house is traced from the 2025 aerial) |
-| `img/aerial-2025.jpg` | MassGIS 2025 aerial, rotated + cropped to the plan frame (u −30..90 ft, v −25..125 ft, 4 px/ft) |
-| `img/layout-sketch.jpg` | Ryan's layout sketch, placed at u −31.4..77 ft, v −25..110.6 ft (≈11.8 px/ft) |
-| `img/` | web-size reference photos shown inside the app |
-| `Photos/` | original photos (the `.mov` is git-ignored) |
+| `index.html`, `styles.css` | the page: start screen, planner, printable sheet |
+| `tokens.css` | design tokens vendored from ryankm.com — never edited on this side |
+| `src/geometry.js` | plane geometry in plan feet; polygons, sectors, bisectors |
+| `src/hydraulics.js` | nozzle flow and throw, precipitation rate, run time, units |
+| `src/site.js` | what a yard is; the three starting points; persistence |
+| `src/coverage.js` | the coverage grid — one implementation, shared by the map, the solver and the tests |
+| `src/autolayout.js` | the solver described above |
+| `src/render.js` | the plan drawing, and the standalone SVG for print |
+| `src/sheet.js` | the dig plan, head schedule and shopping list |
+| `src/main.js` | screens, tools, pointer and keyboard handling, the panel |
+| `tests/run.mjs` | no-dependency test runner (`npm test`) |
+| `scripts/serve.mjs` | static file server for `npm run dev` |
+| `scripts/make-figures.mjs` | regenerates the README figures and the OG card |
 
-## Recommended setup (v1 — before the bucket test)
+## Coordinates
 
-Top bar → **Recommended layout** shows it (your own heads and pipes stay parked under **My layout**; `Use as my layout` copies it over so you can edit). Assumes 50 PSI / 10 GPM; every zone stays under ~5.5 GPM so a hose-bib supply can run it.
+One flat system, "plan feet": `x` runs left to right across the lot as you face
+it from the street, `y` runs away from the street into the yard. Screen `y` is
+flipped exactly once, at the render boundary. Metric display converts on the
+way out; stored state is always feet and GPM.
 
-| Zone | Where | Heads | GPM | Fed from |
-|---|---|---|---|---|
-| 1 | Front lawn, street half | 6 × MP3000 (22 ft) | ≈4.5 | Front bib |
-| 2 | Front lawn, house half | 6 × MP3000 (20–22 ft) | ≈4.3 | Front bib |
-| 3 | Left front lawn (past the driveway) | 6 × MP1000 (12 ft) | ≈0.9 | Back bib, around the patio and through the gate |
-| 4 | Back yard | 8 × MP3000 (24 ft) | ≈5.4 | Back bib |
-| 5 | Left + right side yards | 8 × MP1000 (12 ft) | ≈1.4 | Back bib |
-| 6–7 | Beds: front beds, back fence bed, raised beds, gate/left beds | ½" drip line, 0.6 GPH @ 12" | ≈2 each | One drip zone per bib, with filter + 25 PSI regulator |
+There is no projection, no geocoding and no latitude anywhere in this
+repository. That is deliberate — an earlier version of this tool modelled one
+specific property, with its lot line pulled from a county parcel file and its
+areas traced from a photograph of that yard. It was, structurally, a drawing of
+a house rather than a program about yards, and it could not survive the lot
+changing by a foot.
 
-Head-to-head spacing (each head reaches the next), corners quarter-circle, edges half, middles full. About 34 heads, ~780 ft of ¾" poly lateral (buy 1000 ft), 1" main from each bib to a 3–4 valve manifold, backflow preventer on each bib, one Wi-Fi controller (6–8 zones). Coverage of lawn + beds ≈ 93 %, head-to-head overlap ≈ 80 %.
+## Colour
 
-If the bucket test shows less than 7 GPM: keep the zones as they are (none exceeds 5.5). If it shows 12+ GPM: merge zones 1+2 and 4+5 to save two valves.
+Zones use a five-hue categorical palette, validated on the cream ground for the
+lightness band, chroma floor, colour-vision-deficiency separation across *all*
+pairs, and contrast. One pair lands at ΔE 6.6 under deuteranopia — inside the
+band that is only legal with secondary encoding — so the encoding is not
+optional: every head carries its zone number, every trench carries a per-zone
+dash pattern, and the legend repeats both. Six all-pairs-safe categorical hues
+do not exist at usable contrast, so there are five and they are never cycled; a
+plan with more zones drops the extras to neutral ink and asks you to focus one
+at a time, which is the better way to read a big plan anyway.
 
-## Assumptions to check on site
+## Licence
 
-- Two water sources (hose bibs) as confirmed by Ryan: back wall right of the outdoor shower, and front wall near the right corner. Drag to fine-tune; `+ Water source` adds more; pipes snap to any of them.
-- Front walk is the short path from the driveway steps to the front-door steps (per the photos); there is no walk to the street.
-- Default supply is 50 PSI / 10 GPM until a real gauge + bucket test replaces it.
-- Head GPM and radius are estimates from typical Rain Bird / Hunter nozzle charts, not a hydraulic design.
-
-## Roadmap
-
-1. ~~Map, parcel, house, areas~~ (done)
-2. ~~Heads with spray arcs + coverage raster~~ (done)
-3. ~~Trench drawing + pipe totals~~ (done)
-4. ~~Zones + GPM budget~~ (done)
-5. Printable "dig plan" sheet (PDF) with head list, pipe lengths and a parts count
-6. Precipitation-rate / run-time estimate per zone
-7. Optional: georeference the drone photos as an extra underlay
+MIT.

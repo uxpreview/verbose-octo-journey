@@ -1,2 +1,5 @@
-Photos/
+docs/
+scripts/
+tests/
+node_modules/
 .playwright-mcp/

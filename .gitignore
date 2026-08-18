@@ -1,5 +1,4 @@
 .DS_Store
-Photos/*.mov
 node_modules/
 .vercel
 .env*
