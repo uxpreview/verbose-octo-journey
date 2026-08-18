@@ -3,3 +3,4 @@ node_modules/
 .vercel
 .env*
 .playwright-mcp/
+Photos/

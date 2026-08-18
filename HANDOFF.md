@@ -121,11 +121,15 @@ every change, exportable as JSON. Shape is defined by `defaultState()` in
 `src/autolayout.js`, five stages. This is the heart of the project — the thing
 that makes it a lab rather than a drawing program.
 
-1. **Size the nozzle to the shape** (`pickNozzle`) — measures the largest circle
-   that fits inside each area, sampled, rather than its area. A 2,000 sq ft lawn
-   and a 2,000 sq ft side strip want completely different heads and area alone
-   cannot tell them apart. Wide open ground → gear rotors; ordinary lawns →
-   rotary nozzles; narrow strips → fixed sprays.
+1. **Size the nozzle to the shape, then to the supply** (`pickNozzle`) —
+   measures the largest circle that fits inside each area, sampled, rather than
+   its area. A 2,000 sq ft lawn and a 2,000 sq ft side strip want completely
+   different heads and area alone cannot tell them apart. Wide open ground →
+   gear rotors; ordinary lawns → rotary nozzles; narrow strips → fixed sprays.
+   Then the throw is stepped down until `MIN_HEADS_PER_ZONE` (3) full-circle
+   heads fit the zone budget, stepping the family down if the shortest throw
+   still cannot; `budgeted: false` on the result means nothing fits and the
+   notes say so.
 2. **Ring the edge, fill the middle** (`placeHeads`) — corners take the interior
    angle as their arc and the inward bisector as their aim, computed by
    construction and then verified against the polygon so reflex corners on an
@@ -303,6 +307,13 @@ data URL. Small change, removes a whole class of confusing behaviour.
 **8. There is no CI.** No `.github/` at all, so `npm test` runs only locally. A
 GitHub Action running `npm test` on PRs is about ten lines and the tests are
 fast and dependency-free.
+
+**8b. ~~Nozzle sizing ignores the flow budget~~ Done** (`feat/nozzle-budget`;
+found while doing 5, recorded there as 5b on that branch). `pickNozzle` takes
+`budget` and steps the throw down until `MIN_HEADS_PER_ZONE` full-circle heads
+fit a zone, then the family. Blank 120 × 160 ft at 10 GPM: 8 zones → 6, all
+with ≥ 3 heads; 200 × 260 ft: 27 zones → 17. Sample yard unchanged (its
+nozzles already fit). Two tests.
 
 **9. The map is pointer-only.** The SVG has `tabindex="0"` but there is no
 keyboard path to select a head, nudge one, or reshape an area — only `[`/`]` for

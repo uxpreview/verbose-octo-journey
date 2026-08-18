@@ -47,12 +47,15 @@ Any static host will serve the directory as-is.
 The interesting part is not the drawing program, it is that the plan is
 *computed*. Given the polygons, the sources and the supply:
 
-1. **Size the nozzle to the shape.** Each piece of ground is measured by the
-   largest circle that fits inside it, sampled — the real "how wide is this"
-   — rather than by its area. A 2,000 sq ft lawn and a 2,000 sq ft side strip
-   want completely different heads and area alone cannot tell them apart. Wide
-   open ground gets gear rotors, ordinary lawns get rotary nozzles, narrow
-   strips get fixed sprays. (`pickNozzle`)
+1. **Size the nozzle to the shape — and to the supply.** Each piece of ground
+   is measured by the largest circle that fits inside it, sampled — the real
+   "how wide is this" — rather than by its area. A 2,000 sq ft lawn and a
+   2,000 sq ft side strip want completely different heads and area alone
+   cannot tell them apart. Wide open ground gets gear rotors, ordinary lawns
+   get rotary nozzles, narrow strips get fixed sprays. Then the throw is
+   stepped down until at least three full-circle heads fit one zone's flow
+   budget: on a small meter a designer runs more, smaller heads per valve, not
+   one big rotor at a time. (`pickNozzle`)
 2. **Ring the edge, fill the middle.** Corners first, with the arc matched to
    the interior angle and aimed down the inward bisector — computed by
    construction and then verified against the polygon, so reflex corners on an
