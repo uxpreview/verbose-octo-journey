@@ -181,9 +181,12 @@
               <p>
                 Your spigot is the constraint that decides everything. Heads are
                 walked in a nearest-neighbour chain from the water source and
-                packed greedily into zones at 85 % of measured flow, so a zone
-                is a contiguous <em>place</em> in the yard rather than a
-                scattering, and no valve is sized at 100 % of a bucket test.
+                packed into zones at 85 % of measured flow, so a zone is a
+                contiguous <em>place</em> in the yard rather than a scattering,
+                and no valve is sized at 100 % of a bucket test. The supply
+                fixes how many valves; the chain is then re-cut into that many
+                runs so the busiest zone draws as little as possible and no
+                head is stranded on a valve of its own.
               </p>
             </div>
             <div class="bench-item">

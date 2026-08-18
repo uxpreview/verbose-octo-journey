@@ -65,9 +65,12 @@ The interesting part is not the drawing program, it is that the plan is
    and a yard does not deserve a branch-and-bound. This drops roughly a third of
    the placements. (`pruneHeads`)
 4. **Pack zones under the flow budget.** Heads are walked in a nearest-neighbour
-   chain from the water source and packed greedily at 85 % of measured flow, so
-   a zone is a contiguous *place* in the yard rather than a scattering, and no
-   valve is sized at 100 % of a bucket test. (`chainByProximity`, `packZones`)
+   chain from the water source and packed at 85 % of measured flow, so a zone
+   is a contiguous *place* in the yard rather than a scattering, and no valve
+   is sized at 100 % of a bucket test. The greedy pass fixes how many valves
+   the supply forces; the chain is then re-cut into that many runs so the
+   busiest zone draws as little as possible — no lone head on a valve of its
+   own. (`chainByProximity`, `packZones`, `balanceZones`)
 5. **Trench as a spanning tree, routed around the buildings.** Prim's MST per
    zone from its nearest source, where every edge is a *routed* run: straight
    when the line stays clear of every structure, otherwise the shortest path

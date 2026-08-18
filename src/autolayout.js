@@ -233,6 +233,64 @@ export function packZones(chain, gpmOf, budget, maxPerZone = MAX_HEADS_PER_ZONE)
   return zones;
 }
 
+/** Even out a packing without adding a valve.
+ *
+ * `packZones` is greedy and, for a fixed chain, greedy is optimal for the
+ * *number* of zones — but it fills each zone to the brim and leaves the
+ * remainder in the last one, so a 40-head yard comes out 14 / 14 / 11 / 1: a
+ * single head on its own valve, which is a real solenoid, a real wire run and
+ * a real controller station for nothing. This keeps the zone count and the
+ * chain order, and re-cuts the chain into that many contiguous runs so that
+ * the busiest zone draws as little as possible. It is the classic linear
+ * partition, solved exactly by dynamic programming — cheap at the size of a
+ * yard. The zone count itself is not negotiable here: it is whatever the flow
+ * budget and the head cap force. */
+export function balanceZones(chain, gpmOf, budget, maxPerZone = MAX_HEADS_PER_ZONE) {
+  const greedy = packZones(chain, gpmOf, budget, maxPerZone);
+  const K = greedy.length, n = chain.length;
+  if (K < 2 || n < 2) return greedy;
+  const g = chain.map(gpmOf);
+  const pre = [0];
+  for (const v of g) pre.push(pre[pre.length - 1] + v);
+  const sum = (j, i) => pre[i] - pre[j]; // flow of items j..i-1
+  // best[k][i]: least possible "busiest zone" for the first i items in k zones;
+  // cut[k][i]: where the last zone starts.
+  const INF = Infinity;
+  const best = Array.from({ length: K + 1 }, () => new Float64Array(n + 1).fill(INF));
+  const cut = Array.from({ length: K + 1 }, () => new Int32Array(n + 1).fill(-1));
+  best[0][0] = 0;
+  for (let k = 1; k <= K; k++) {
+    for (let i = 1; i <= n; i++) {
+      for (let j = Math.max(k - 1, i - maxPerZone); j < i; j++) {
+        if (best[k - 1][j] === INF) continue;
+        const v = Math.max(best[k - 1][j], sum(j, i));
+        if (v < best[k][i]) { best[k][i] = v; cut[k][i] = j; }
+      }
+    }
+  }
+  // Greedy already found a feasible K-way cut, so this cannot fail; if it ever
+  // does, the greedy answer is still a valid plan.
+  if (best[K][n] === INF || best[K][n] > budget + 1e-9) return greedy;
+  const zones = [];
+  for (let k = K, i = n; k > 0; k--) { const j = cut[k][i]; zones.unshift(chain.slice(j, i)); i = j; }
+  return zones;
+}
+
+/** Zone the heads: try a chain from every source, keep whichever needs the
+ *  fewest valves (then the lowest peak flow), and balance it. */
+export function zoneHeads(heads, sources, gpmOf, budget, maxPerZone = MAX_HEADS_PER_ZONE) {
+  let bestZones = null, bestPeak = Infinity;
+  const starts = sources.length ? sources : [{ x: 0, y: 0 }];
+  for (const start of starts) {
+    const zones = balanceZones(chainByProximity(heads, start), gpmOf, budget, maxPerZone);
+    const peak = Math.max(0, ...zones.map((z) => z.reduce((t, h) => t + gpmOf(h), 0)));
+    if (!bestZones || zones.length < bestZones.length || (zones.length === bestZones.length && peak < bestPeak)) {
+      bestZones = zones; bestPeak = peak;
+    }
+  }
+  return bestZones;
+}
+
 /* --- 7. Trenching ------------------------------------------------------- */
 
 /** How much longer a run is allowed to look when it crosses paving. A walk can
@@ -413,8 +471,7 @@ export function autoLayout(state, opts = {}) {
 
   // --- zones ---
   const primary = state.sources[0];
-  const chain = chainByProximity(placed, primary);
-  const groups = packZones(chain, (h) => headGpm(h, psi), budget);
+  const groups = zoneHeads(placed, state.sources, (h) => headGpm(h, psi), budget);
 
   const heads = [];
   groups.forEach((group, i) => {
