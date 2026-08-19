@@ -9,7 +9,7 @@
 | **Base** | `main` @ `d2dccac` — contains the full rebuild |
 | **Landed** | [PR #6](https://github.com/uxpreview/verbose-octo-journey/pull/6) — **merged** |
 | **Deploys from** | `main` → `irrigation-planner-theta.vercel.app` |
-| **Intended host** | `irrigation.ryankm.com` — **assumed, not confirmed** (see §7.1) |
+| **Host** | `irrigation.ryankm.com` — **confirmed** 2026-08-19; domain attach + DNS still pending (see §7.2) |
 | **Tests** | `npm test` — 34 on `main`; each feature branch adds its own (see §7) |
 | **Handoff written** | 2026-08-18 |
 
@@ -228,30 +228,27 @@ PR; 8–11 are polish.
 
 ### Blocking on a decision from Ryan
 
-**1. Confirm the experiment number and the host — this is now live, not
-pending.** `EXP-039` and `irrigation.ryankm.com` were assumptions I made, and
-PR #6 is merged, so **whatever Vercel serves from `main` now carries them** in
-its title, canonical link, Open Graph tags and JSON-LD. If either is wrong, fix
-it before search engines settle on it. Hard-coded in five places:
+**1. ~~Confirm the experiment number and the host.~~ Done** (2026-08-19).
+`EXP-039` and `irrigation.ryankm.com` are confirmed and are what the Lab index
+on ryankm.com now records. The production deploy was fetched and verified: it
+serves the rebuild with the right title, canonical link, Open Graph tags and
+JSON-LD. Nothing to change in the five hard-coded places.
 
-- `index.html` — `<title>`, description, `rel=canonical`, `og:*`, JSON-LD `url` / `alternateName`
-- `README.md` — the "Try it" line and the badge text
-- `sitemap.xml` — the single `<loc>`
-- `robots.txt` — the `Sitemap:` line
-- `package.json` — `homepage`
+**2. Finish the deploy — the last two steps need Ryan's hands.** The Vercel
+project `irrigation-planner` (team `ryankm`) serves the rebuild, but the custom
+domain is not attached and no DNS record exists yet:
 
-*Not verified:* I could not reach `irrigation-planner-theta.vercel.app` from the
-build sandbox (network policy), so I cannot confirm the deploy has actually
-picked up the merge. Check it first.
+- In Vercel: project `irrigation-planner` → Settings → Domains → add
+  `irrigation.ryankm.com`.
+- In Squarespace DNS for ryankm.com: add CNAME `irrigation` →
+  `cname.vercel-dns.com` (same as `watercolor`, which is already attached on
+  the Vercel side and waiting on the same DNS step).
 
-**2. Finish the deploy.** `main` has changed, so the existing Vercel project now
-serves the rebuild at the old URL. Remaining: add `irrigation.ryankm.com` to the
-project, point DNS, and decide whether the old `vercel.app` URL should redirect.
-`.vercelignore` already excludes `docs/`, `scripts/` and `tests/`.
+Until both are done the tool is only reachable at the `vercel.app` URLs.
 
-**3. Add the Lab index entry** on ryankm.com. Different repo
-(`uxpreview/portfolio`) and not in this repo's scope — needs an EXP-039 entry at
-`/lab` pointing off-site, the same way EXP-038 does.
+**3. ~~Add the Lab index entry~~ Done** (2026-08-19). EXP-039 is listed at
+ryankm.com/lab as a live off-site tool, with its own card miniature, the same
+way EXP-038 is.
 
 ### Substance for the next PR
 
@@ -359,8 +356,10 @@ and the pipe lengths are already computed.
 
 ## 8. Open questions for Ryan
 
-1. **`EXP-039`** — is that number free in the Lab's numbering?
-2. **`irrigation.ryankm.com`** — right subdomain?
+1. ~~**`EXP-039`** — is that number free in the Lab's numbering?~~ Confirmed;
+   the Lab index records it.
+2. ~~**`irrigation.ryankm.com`** — right subdomain?~~ Confirmed; see §7.2 for
+   the two steps that make it resolve.
 3. **Paper vs aerial styling.** The plan is now drawn as a drafting document
    rather than the old dark satellite look. Deliberate, defensible, and the
    easiest thing in the rebuild to revert if it reads wrong next to the rest of
