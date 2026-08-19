@@ -8,7 +8,7 @@
   "license": "MIT",
   "author": "Ryan McCarty (https://ryankm.com)",
   "homepage": "https://irrigation.ryankm.com/",
-  "repository": { "type": "git", "url": "git+https://github.com/uxpreview/verbose-octo-journey.git" },
+  "repository": { "type": "git", "url": "git+https://github.com/uxpreview/irrigation-lab.git" },
   "engines": { "node": ">=20" },
   "scripts": {
     "dev": "node scripts/serve.mjs",
