@@ -5,9 +5,9 @@
 
 | | |
 |---|---|
-| **Repo** | `uxpreview/verbose-octo-journey` |
+| **Repo** | `uxpreview/irrigation-lab` (renamed from `verbose-octo-journey`, 2026-08-19; old URLs redirect) |
 | **Base** | `main` @ `d2dccac` — contains the full rebuild |
-| **Landed** | [PR #6](https://github.com/uxpreview/verbose-octo-journey/pull/6) — **merged** |
+| **Landed** | [PR #6](https://github.com/uxpreview/irrigation-lab/pull/6) — **merged** |
 | **Deploys from** | `main` → `irrigation-planner-theta.vercel.app` |
 | **Host** | `irrigation.ryankm.com` — **confirmed** 2026-08-19; domain attach + DNS still pending (see §7.2) |
 | **Tests** | `npm test` — 34 on `main`; each feature branch adds its own (see §7) |
@@ -50,8 +50,8 @@ Deleted: the address, the photographs, `data/parcel.geojson`,
 ## 2. Start here
 
 ```bash
-git clone https://github.com/uxpreview/verbose-octo-journey.git
-cd verbose-octo-journey
+git clone https://github.com/uxpreview/irrigation-lab.git
+cd irrigation-lab
 git checkout -b <new-branch> origin/main
 ```
 
